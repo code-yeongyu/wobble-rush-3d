@@ -2,8 +2,8 @@ node_modules/
 dist/
 .build-stage/
 .wrangler/
-evidence/**/*.webm
-evidence/**/*.zip
+# QA run artifacts are reproducible; the curated ones live in docs/media
+evidence/
 *.log
 .DS_Store
 .env

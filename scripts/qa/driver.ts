@@ -89,27 +89,33 @@ export function createDriver(options: DriverOptions) {
    * Drives the runner with real keystrokes so the video shows genuine input:
    * forward the whole time, weaving side to side, jumping and occasionally diving.
    */
+  /**
+   * Drives with real keystrokes the way a player does: forward the whole time,
+   * short sidestep taps to weave around a sweeper, regular jumps, occasional
+   * dives. Strafe is TAPPED rather than held — now that camera-relative movement
+   * is honest, a held sidestep walks straight off the course, which is correct
+   * behaviour but makes for a bot that kills itself instead of racing.
+   */
   async function humanDrive(page: Page, seconds: number): Promise<void> {
     const end = Date.now() + seconds * 1000
     await page.keyboard.down("KeyW")
     let tick = 0
-    let strafe: "KeyA" | "KeyD" | null = null
     while (Date.now() < end) {
-      await page.waitForTimeout(360)
+      await page.waitForTimeout(300)
       tick += 1
-      if (tick % 3 === 0) await page.keyboard.press("Space")
-      if (tick % 4 === 0) {
-        if (strafe !== null) await page.keyboard.up(strafe)
-        strafe = tick % 8 === 0 ? "KeyA" : "KeyD"
-        await page.keyboard.down(strafe)
+      if (tick % 2 === 0) await page.keyboard.press("Space")
+      if (tick % 3 === 0) {
+        const sidestep = tick % 6 === 0 ? "KeyA" : "KeyD"
+        await page.keyboard.down(sidestep)
+        await page.waitForTimeout(170)
+        await page.keyboard.up(sidestep)
       }
-      if (tick % 9 === 0) {
+      if (tick % 11 === 0) {
         await page.keyboard.down("ShiftLeft")
         await page.waitForTimeout(90)
         await page.keyboard.up("ShiftLeft")
       }
     }
-    if (strafe !== null) await page.keyboard.up(strafe)
     await page.keyboard.up("KeyW")
   }
 
