@@ -265,6 +265,7 @@ export class Game {
     this.runner.dispose()
     this.npcs.dispose()
     this.remotes.clear()
+    this.courseView.dispose()
     this.kit.dispose()
   }
 }

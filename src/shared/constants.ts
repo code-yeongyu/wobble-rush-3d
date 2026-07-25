@@ -67,6 +67,20 @@ export const CAMERA = {
   targetHalfLife: 0.09,
   /** Extra look-ahead in the direction of travel, seconds of velocity. */
   lookAheadSec: 0.18,
+  /** Mouse-drag orbit sensitivity, radians per pixel. */
+  orbitSensitivity: 0.0045,
+  /** Lowest orbit pitch (nearly level with the runner), rad. */
+  minPitch: 0.12,
+  /** Highest orbit pitch (looking down at the runner), rad. */
+  maxPitch: 1.15,
+  /** Auto-follow only eases toward headings within this angle of camera forward, rad. */
+  followConeRad: 0.6,
+  /** Auto-follow yaw smoothing half-life, s (frame-rate independent). */
+  followHalfLife: 0.3,
+  /** Auto-follow engages above this horizontal speed, m/s. */
+  followMinSpeed: 1.5,
+  /** Auto-follow pause after a manual drag, s — manual control wins, then yields. */
+  manualFollowDelaySec: 1.4,
   fov: 62,
   near: 0.1,
   far: 400,

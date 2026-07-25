@@ -1,14 +1,19 @@
 /**
  * Third-person follow camera with exponential (frame-rate independent) damping
  * and velocity look-ahead — DESIGN.md section 5.
+ *
+ * The rig is a dumb smoother: orbit state (yaw/pitch, manual-vs-follow rules)
+ * lives in the pure, unit-tested camera-math module; this class only turns an
+ * OrbitState into a smoothed camera transform each frame.
  */
 
 import * as THREE from "three"
 import { CAMERA } from "../shared/constants"
 import type { MutVec3, Vec3 } from "../shared/types"
+import { DEFAULT_PITCH, damp, type OrbitState } from "./camera-math"
 
-/** Frame-rate independent smoothing: fraction of the remaining gap to close this frame. */
-const damp = (halfLife: number, dt: number): number => 1 - 2 ** (-dt / halfLife)
+/** Full 3D orbit radius: CAMERA.distance/height define the rest pose. */
+const ORBIT_RADIUS = Math.hypot(CAMERA.distance, CAMERA.height)
 
 export class CameraRig {
   private readonly camera: THREE.PerspectiveCamera
@@ -17,47 +22,17 @@ export class CameraRig {
   private readonly desired = new THREE.Vector3()
   private readonly desiredTarget = new THREE.Vector3()
   private shake = 0
-  private yaw = 0
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera
   }
 
-  /** Camera yaw in radians — movement input is expressed relative to this. */
-  get cameraYaw(): number {
-    return this.yaw
-  }
-
   /** Places the camera behind the runner with no smoothing (race start, respawn). */
   snapTo(runnerPosition: Vec3, runnerYaw: number): void {
-    this.yaw = runnerYaw
-    this.desired.set(
-      runnerPosition.x - Math.sin(runnerYaw) * CAMERA.distance,
-      runnerPosition.y + CAMERA.height,
-      runnerPosition.z - Math.cos(runnerYaw) * CAMERA.distance,
-    )
+    this.desiredFrom(runnerPosition, runnerYaw, DEFAULT_PITCH)
     this.position.copy(this.desired)
     this.target.set(runnerPosition.x, runnerPosition.y + 1, runnerPosition.z)
     this.apply()
-  }
-
-  /**
-   * Eases the orbit toward the direction of travel; a pointer drag takes over
-   * immediately so the player can always look where they want.
-   */
-  followHeading(velocity: MutVec3, dragYaw: number, dt: number): number {
-    if (dragYaw !== 0) {
-      this.yaw += dragYaw
-      return this.yaw
-    }
-    if (Math.hypot(velocity.x, velocity.z) > 1.5) {
-      const heading = Math.atan2(velocity.x, velocity.z)
-      let delta = heading - this.yaw
-      while (delta > Math.PI) delta -= Math.PI * 2
-      while (delta < -Math.PI) delta += Math.PI * 2
-      this.yaw += delta * Math.min(1, dt * 2.4)
-    }
-    return this.yaw
   }
 
   addShake(amount: number): void {
@@ -67,17 +42,12 @@ export class CameraRig {
   update(
     runnerPosition: MutVec3,
     runnerVelocity: MutVec3,
-    orbitYaw: number,
+    orbit: OrbitState,
     dt: number,
     reducedMotion: boolean,
   ): void {
-    this.yaw = orbitYaw
+    this.desiredFrom(runnerPosition, orbit.yaw, orbit.pitch)
     const lookAhead = CAMERA.lookAheadSec
-    this.desired.set(
-      runnerPosition.x - Math.sin(orbitYaw) * CAMERA.distance,
-      runnerPosition.y + CAMERA.height,
-      runnerPosition.z - Math.cos(orbitYaw) * CAMERA.distance,
-    )
     this.desiredTarget.set(
       runnerPosition.x + runnerVelocity.x * lookAhead,
       runnerPosition.y + 1 + runnerVelocity.y * lookAhead * 0.35,
@@ -97,6 +67,16 @@ export class CameraRig {
     }
 
     this.apply()
+  }
+
+  /** Spherical offset behind the runner: `yaw` around, `pitch` above the deck. */
+  private desiredFrom(runnerPosition: Vec3, yaw: number, pitch: number): void {
+    const horizontal = Math.cos(pitch) * ORBIT_RADIUS
+    this.desired.set(
+      runnerPosition.x - Math.sin(yaw) * horizontal,
+      runnerPosition.y + Math.sin(pitch) * ORBIT_RADIUS,
+      runnerPosition.z - Math.cos(yaw) * horizontal,
+    )
   }
 
   private apply(): void {
