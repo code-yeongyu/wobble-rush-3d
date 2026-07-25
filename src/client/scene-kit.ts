@@ -33,11 +33,11 @@ export function createVinyl(color: string, options: VinylOptions = {}): THREE.Me
     color: base,
     roughness: options.roughness ?? 0.34,
     metalness: options.metalness ?? 0,
-    clearcoat: options.clearcoat ?? 0.55,
-    clearcoatRoughness: options.clearcoatRoughness ?? 0.28,
+    clearcoat: options.clearcoat ?? 0.38,
+    clearcoatRoughness: options.clearcoatRoughness ?? 0.34,
     sheen: options.sheen ?? 0,
     sheenColor: new THREE.Color("#ffffff"),
-    envMapIntensity: 0.85,
+    envMapIntensity: 0.42,
   })
   if (options.emissiveIntensity !== undefined) {
     material.emissive = base.clone().multiplyScalar(0.6)
@@ -110,7 +110,7 @@ export function createSceneKit(canvas: HTMLCanvasElement): SceneKit {
   renderer.setSize(globalThis.innerWidth, globalThis.innerHeight, false)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.05
+  renderer.toneMappingExposure = 0.86
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
@@ -131,7 +131,7 @@ export function createSceneKit(canvas: HTMLCanvasElement): SceneKit {
   )
   camera.position.set(0, 6, -12)
 
-  const sun = new THREE.DirectionalLight(0xfff4e2, 2.5)
+  const sun = new THREE.DirectionalLight(0xfff6e8, 1.25)
   sun.position.set(28, 46, -18)
   sun.castShadow = true
   sun.shadow.mapSize.set(2048, 2048)
@@ -147,7 +147,7 @@ export function createSceneKit(canvas: HTMLCanvasElement): SceneKit {
   scene.add(sun)
   scene.add(sun.target)
 
-  const bounce = new THREE.HemisphereLight(0xbfd8ff, 0xffd9b8, 0.55)
+  const bounce = new THREE.HemisphereLight(0xbfd8ff, 0xffd9b8, 0.32)
   scene.add(bounce)
 
   return {

@@ -55,6 +55,9 @@
   grid-row: 1;
   justify-self: end;
   align-self: center;
+  padding: 6px 14px;
+  background: rgba(42, 36, 64, 0.55);
+  border-radius: 999px;
   font-size: 20px;
   font-weight: 800;
   color: #fff;
@@ -76,6 +79,10 @@
 
 .controls-hint--faded {
   opacity: 0;
+}
+
+.countdown[hidden] {
+  display: none;
 }
 
 .countdown {

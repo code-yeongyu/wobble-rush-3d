@@ -23,9 +23,13 @@ export class CourseView {
 
   constructor(course: CourseDefinition) {
     for (const platform of course.platforms) {
+      // Decks are the calm surface: matte enough that the sun does not blow a
+      // white hotspot across them. Gloss is reserved for hazards, so "shiny"
+      // always means "this one moves and hurts".
       const material = createVinyl(platform.color, {
-        roughness: platform.kind === "bridge" ? 0.3 : 0.34,
-        clearcoat: 0.55,
+        roughness: platform.kind === "bridge" ? 0.5 : 0.56,
+        clearcoat: 0.12,
+        clearcoatRoughness: 0.5,
       })
       const mesh = boxMesh(platform.box, material, 0.22)
       mesh.name = platform.id

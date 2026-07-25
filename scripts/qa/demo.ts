@@ -84,21 +84,31 @@ async function openGame(context: BrowserContext): Promise<Page> {
   return page
 }
 
-/** Drives the runner with real keystrokes so the video shows genuine input. */
+/**
+ * Drives the runner with real keystrokes so the video shows genuine input:
+ * forward the whole time, weaving side to side, jumping and occasionally diving.
+ */
 async function humanDrive(page: Page, seconds: number): Promise<void> {
   const end = Date.now() + seconds * 1000
   await page.keyboard.down("KeyW")
   let tick = 0
+  let strafe: "KeyA" | "KeyD" | null = null
   while (Date.now() < end) {
-    await page.waitForTimeout(400)
+    await page.waitForTimeout(360)
     tick += 1
     if (tick % 3 === 0) await page.keyboard.press("Space")
-    if (tick % 7 === 0) {
+    if (tick % 4 === 0) {
+      if (strafe !== null) await page.keyboard.up(strafe)
+      strafe = tick % 8 === 0 ? "KeyA" : "KeyD"
+      await page.keyboard.down(strafe)
+    }
+    if (tick % 9 === 0) {
       await page.keyboard.down("ShiftLeft")
       await page.waitForTimeout(90)
       await page.keyboard.up("ShiftLeft")
     }
   }
+  if (strafe !== null) await page.keyboard.up(strafe)
   await page.keyboard.up("KeyW")
 }
 
@@ -126,9 +136,10 @@ async function runSolo(browser: Browser): Promise<void> {
   await page.click("#play-solo")
   await waitFor(page, (s) => s.phase === "racing", 12_000, "race never started")
   const start = await readState(page)
-  await humanDrive(page, 12)
-  const after = await readState(page)
+  await humanDrive(page, 6)
   await page.screenshot({ path: `${outDir}/solo-run.png` })
+  await humanDrive(page, 6)
+  const after = await readState(page)
   if (after.position.z - start.position.z < 8) {
     throw new ScenarioFailure(
       "solo",

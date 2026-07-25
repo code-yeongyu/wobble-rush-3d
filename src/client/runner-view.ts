@@ -53,11 +53,11 @@ export class RunnerView {
       sheen: 0.4,
     })
     const bellyMaterial = new THREE.MeshPhysicalMaterial({
-      color: lighten(color, 0.55),
+      color: lighten(color, 0.34),
       roughness: 0.3,
       clearcoat: 0.8,
       clearcoatRoughness: 0.18,
-      envMapIntensity: 0.85,
+      envMapIntensity: 0.42,
     })
     const inkMaterial = createVinyl("#2A2440", { roughness: 0.4, clearcoat: 0.3 })
     const accentMaterial = createVinyl("#FFD400", { roughness: 0.25, clearcoat: 0.9 })
@@ -109,8 +109,8 @@ export class RunnerView {
     // Antenna: the read at distance.
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.42, 10), inkMaterial)
     stalk.position.y = 0.21
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 14), accentMaterial)
-    ball.position.y = 0.46
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 18, 14), accentMaterial)
+    ball.position.y = 0.48
     ball.castShadow = true
     this.antenna.add(stalk, ball)
     this.antenna.position.y = 1.44
