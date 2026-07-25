@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Wobble Rush 3D \u2014 a bright, toy-like browser 3D obstacle-course racer with online multiplayer on Cloudflare Workers.",
+  "description": "Wobble Rush 3D — a bright, toy-like browser 3D obstacle-course racer with online multiplayer on Cloudflare Workers.",
   "scripts": {
     "build": "bun run scripts/build.ts",
     "dev": "bun run scripts/build.ts && wrangler dev",
@@ -22,6 +22,7 @@
     "@biomejs/biome": "latest",
     "@cloudflare/workers-types": "latest",
     "@playwright/test": "latest",
+    "@types/bun": "^1.3.14",
     "@types/three": "latest",
     "@typescript/native-preview": "latest",
     "typescript": "latest",
