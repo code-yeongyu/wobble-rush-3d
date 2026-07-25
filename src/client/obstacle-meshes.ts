@@ -1,28 +1,38 @@
-/** Mesh builders for every obstacle archetype and the course furniture. */
+/**
+ * Mesh builders for the obstacle archetypes. Materials and geometries come
+ * from the shared caches in `render-cache`, so identical looks and shapes
+ * across the course cost one material, one geometry and one program.
+ * Genuinely repeated statics (sweeper hubs) and bobbing bumper domes render
+ * as InstancedMesh; moving arms and movers stay individual meshes.
+ */
 
 import * as THREE from "three"
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js"
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 import { PALETTE } from "../shared/course"
 import { moverBoxAt, sweeperArmAt } from "../shared/obstacles"
-import type {
-  BoxCollider,
-  BumperSpec,
-  CourseDefinition,
-  MoverSpec,
-  ObstacleSpec,
-  SweeperSpec,
-} from "../shared/types"
-import { assertNever } from "../shared/types"
-import { createVinyl } from "./scene-kit"
+import type { BoxCollider, BumperSpec, MoverSpec, SweeperSpec } from "../shared/types"
+import type { GeometryCache, VinylCache } from "./render-cache"
 
-export function boxMesh(box: BoxCollider, material: THREE.Material, radius = 0.14): THREE.Mesh {
-  const geometry = new RoundedBoxGeometry(
-    box.halfExtents.x * 2,
-    box.halfExtents.y * 2,
-    box.halfExtents.z * 2,
-    3,
-    Math.min(radius, box.halfExtents.x, box.halfExtents.y, box.halfExtents.z),
-  )
+export type MeshTools = { readonly vinyl: VinylCache; readonly geometry: GeometryCache }
+
+export function boxMesh(
+  box: BoxCollider,
+  material: THREE.Material,
+  radius = 0.14,
+  tools?: MeshTools,
+): THREE.Mesh {
+  const corner = Math.min(radius, box.halfExtents.x, box.halfExtents.y, box.halfExtents.z)
+  const factory = (): THREE.BufferGeometry =>
+    new RoundedBoxGeometry(
+      box.halfExtents.x * 2,
+      box.halfExtents.y * 2,
+      box.halfExtents.z * 2,
+      3,
+      corner,
+    )
+  const key = `rbox:${box.halfExtents.x}:${box.halfExtents.y}:${box.halfExtents.z}:${corner}`
+  const geometry = tools === undefined ? factory() : tools.geometry.get(key, factory)
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.set(box.center.x, box.center.y, box.center.z)
   mesh.rotation.y = box.yaw
@@ -31,175 +41,164 @@ export function boxMesh(box: BoxCollider, material: THREE.Material, radius = 0.1
   return mesh
 }
 
-export function buildObstacle(spec: ObstacleSpec): THREE.Object3D {
-  switch (spec.kind) {
-    case "sweeper":
-      return buildSweeper(spec)
-    case "mover":
-      return buildMover(spec)
-    case "bumper":
-      return buildBumper(spec)
-    default:
-      return assertNever(spec, "buildObstacle")
-  }
+export type SweeperMesh = {
+  readonly spec: SweeperSpec
+  readonly group: THREE.Group
+  readonly arm: THREE.Mesh
 }
+export type MoverMesh = { readonly spec: MoverSpec; readonly mesh: THREE.Mesh }
 
-function buildSweeper(spec: SweeperSpec): THREE.Object3D {
+export function buildSweeper(spec: SweeperSpec, tools: MeshTools): SweeperMesh {
   const group = new THREE.Group()
   const arm = boxMesh(
     sweeperArmAt(spec, 0),
-    createVinyl(spec.color, {
+    tools.vinyl.get(spec.color, {
       roughness: 0.22,
       clearcoat: 0.9,
       clearcoatRoughness: 0.12,
       emissiveIntensity: 0.28,
     }),
     0.18,
+    tools,
   )
-  arm.name = `${spec.id}-arm`
   group.add(arm)
 
-  // Caution striping: the hazard reads as dangerous even in peripheral vision.
-  for (let index = 0; index < 3; index += 1) {
-    const stripe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.34, spec.armHalfHeight * 2.06, spec.armHalfThickness * 2.08),
-      createVinyl(PALETTE.hazardStripe, { roughness: 0.25, clearcoat: 0.8 }),
-    )
-    stripe.position.x = -spec.armLength * 0.28 + index * spec.armLength * 0.28
-    arm.add(stripe)
-  }
-
-  const hub = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.42, 0.5, spec.pivot.y + 0.7, 20),
-    createVinyl(PALETTE.ink, { roughness: 0.45 }),
+  // Caution striping: one merged geometry per arm length, one draw call per arm.
+  const stripeGeometry = tools.geometry.get(
+    `stripes:${spec.armLength}:${spec.armHalfHeight}:${spec.armHalfThickness}`,
+    () => {
+      const parts: THREE.BufferGeometry[] = []
+      for (let index = 0; index < 3; index += 1) {
+        const part = new THREE.BoxGeometry(
+          0.34,
+          spec.armHalfHeight * 2.06,
+          spec.armHalfThickness * 2.08,
+        )
+        part.translate(-spec.armLength * 0.28 + index * spec.armLength * 0.28, 0, 0)
+        parts.push(part)
+      }
+      const merged = mergeGeometries(parts)
+      for (const part of parts) part.dispose()
+      return merged
+    },
   )
-  hub.position.set(spec.pivot.x, (spec.pivot.y - 0.7) / 2, spec.pivot.z)
-  hub.castShadow = true
-  group.add(hub)
+  const stripes = new THREE.Mesh(
+    stripeGeometry,
+    tools.vinyl.get(PALETTE.hazardStripe, { roughness: 0.25, clearcoat: 0.8 }),
+  )
+  arm.add(stripes)
+  return { spec, group, arm }
+}
+
+/** Static hub columns under every sweeper pivot, one instanced draw per height. */
+export function buildSweeperHubs(specs: readonly SweeperSpec[], tools: MeshTools): THREE.Group {
+  const group = new THREE.Group()
+  const byHeight = new Map<number, SweeperSpec[]>()
+  for (const spec of specs) {
+    const list = byHeight.get(spec.pivot.y) ?? []
+    list.push(spec)
+    byHeight.set(spec.pivot.y, list)
+  }
+  const scratch = new THREE.Matrix4()
+  for (const [pivotY, list] of byHeight) {
+    const geometry = tools.geometry.get(
+      `hub:${pivotY}`,
+      () => new THREE.CylinderGeometry(0.42, 0.5, pivotY + 0.7, 20),
+    )
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      tools.vinyl.get(PALETTE.ink, { roughness: 0.45 }),
+      list.length,
+    )
+    list.forEach((spec, index) => {
+      scratch.makeTranslation(spec.pivot.x, (spec.pivot.y - 0.7) / 2, spec.pivot.z)
+      mesh.setMatrixAt(index, scratch)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    mesh.computeBoundingSphere()
+    group.add(mesh)
+  }
   return group
 }
 
-function buildMover(spec: MoverSpec): THREE.Object3D {
+export function buildMover(spec: MoverSpec, tools: MeshTools): MoverMesh {
   const mesh = boxMesh(
     moverBoxAt(spec, 0),
-    createVinyl(spec.color, { roughness: 0.3, clearcoat: 0.7 }),
+    tools.vinyl.get(spec.color, { roughness: 0.3, clearcoat: 0.7 }),
     0.2,
+    tools,
   )
-  mesh.name = `${spec.id}-deck`
+  const railRadius = Math.max(spec.halfExtents.x, spec.halfExtents.z) * 0.92
   const rail = new THREE.Mesh(
-    new THREE.TorusGeometry(Math.max(spec.halfExtents.x, spec.halfExtents.z) * 0.92, 0.07, 8, 28),
-    createVinyl(PALETTE.hazardStripe, { roughness: 0.3 }),
+    tools.geometry.get(
+      `rail:${railRadius}`,
+      () => new THREE.TorusGeometry(railRadius, 0.07, 8, 28),
+    ),
+    tools.vinyl.get(PALETTE.hazardStripe, { roughness: 0.3 }),
   )
   rail.rotation.x = Math.PI / 2
   rail.position.y = spec.halfExtents.y + 0.02
   mesh.add(rail)
-  return mesh
+  return { spec, mesh }
 }
 
-function buildBumper(spec: BumperSpec): THREE.Object3D {
-  const group = new THREE.Group()
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(spec.radius, 28, 20),
-    createVinyl(spec.color, {
-      roughness: 0.18,
-      clearcoat: 1,
-      clearcoatRoughness: 0.08,
-      sheen: 0.35,
-    }),
-  )
-  dome.castShadow = true
-  dome.name = `${spec.id}-dome`
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(spec.radius * 0.82, spec.radius * 0.12, 10, 30),
-    createVinyl(PALETTE.hazardStripe, { roughness: 0.25, clearcoat: 0.85 }),
-  )
-  ring.rotation.x = Math.PI / 2
-  ring.position.y = spec.radius * 0.34
-  dome.add(ring)
-  group.add(dome)
-  return group
+export type BumperEntry = {
+  readonly spec: BumperSpec
+  readonly domes: THREE.InstancedMesh
+  readonly rings: THREE.InstancedMesh
+  readonly index: number
 }
 
-export function buildCheckpointFlag(x: number, z: number): THREE.Object3D {
-  const group = new THREE.Group()
-  const pole = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.09, 3, 12),
-    createVinyl(PALETTE.ink, { roughness: 0.5 }),
-  )
-  pole.position.y = 1.5
-  const flag = new THREE.Mesh(
-    new THREE.BoxGeometry(1.1, 0.66, 0.06),
-    createVinyl(PALETTE.deckRest, { roughness: 0.25, clearcoat: 0.9, emissiveIntensity: 0.25 }),
-  )
-  flag.position.set(0.6, 2.6, 0)
-  group.add(pole, flag)
-  group.position.set(x - 3.4, 0, z)
-  return group
+export type BumperSet = {
+  readonly group: THREE.Group
+  readonly entries: readonly BumperEntry[]
+  /** Every instanced mesh whose instanceMatrix needs flagging after updates. */
+  readonly instanced: readonly THREE.InstancedMesh[]
 }
 
-export type FinishGate = { readonly group: THREE.Group; readonly beam: THREE.Mesh }
-
-export function buildFinishGate(course: CourseDefinition): FinishGate {
+/** Bumper domes genuinely repeat: one instanced draw for domes, one for rings. */
+export function buildBumperSet(specs: readonly BumperSpec[], tools: MeshTools): BumperSet {
   const group = new THREE.Group()
-  const material = createVinyl(PALETTE.finish, {
-    roughness: 0.25,
-    metalness: 0.15,
-    clearcoat: 0.9,
-    emissiveIntensity: 0.35,
-  })
-  for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 5.4, 16), material)
-    post.position.set(
-      course.finish.center.x + side * 4.2,
-      course.finish.center.y - 0.6,
-      course.finish.center.z - 4.6,
+  const entries: BumperEntry[] = []
+  const instanced: THREE.InstancedMesh[] = []
+  const byRadius = new Map<number, BumperSpec[]>()
+  for (const spec of specs) {
+    const list = byRadius.get(spec.radius) ?? []
+    list.push(spec)
+    byRadius.set(spec.radius, list)
+  }
+  for (const [radius, list] of byRadius) {
+    const domes = new THREE.InstancedMesh(
+      tools.geometry.get(`dome:${radius}`, () => new THREE.SphereGeometry(radius, 28, 20)),
+      tools.vinyl.get("#ffffff", {
+        roughness: 0.18,
+        clearcoat: 1,
+        clearcoatRoughness: 0.08,
+        sheen: 0.35,
+      }),
+      list.length,
     )
-    post.castShadow = true
-    group.add(post)
+    const rings = new THREE.InstancedMesh(
+      tools.geometry.get(
+        `ring:${radius}`,
+        () => new THREE.TorusGeometry(radius * 0.82, radius * 0.12, 10, 30),
+      ),
+      tools.vinyl.get(PALETTE.hazardStripe, { roughness: 0.25, clearcoat: 0.85 }),
+      list.length,
+    )
+    list.forEach((spec, index) => {
+      domes.setColorAt(index, new THREE.Color(spec.color))
+      entries.push({ spec, domes, rings, index })
+    })
+    if (domes.instanceColor !== null) domes.instanceColor.needsUpdate = true
+    domes.castShadow = true
+    // The instances bob: their bounds change every frame, so culling against
+    // the base geometry sphere would pop them out. Deliberate, documented.
+    domes.frustumCulled = false
+    rings.frustumCulled = false
+    group.add(domes, rings)
+    instanced.push(domes, rings)
   }
-  const beam = new THREE.Mesh(new RoundedBoxGeometry(9.4, 1.1, 0.9, 3, 0.3), material)
-  beam.position.set(
-    course.finish.center.x,
-    course.finish.center.y + 2.1,
-    course.finish.center.z - 4.6,
-  )
-  beam.castShadow = true
-  const banner = new THREE.Mesh(
-    new THREE.PlaneGeometry(8.4, 1.5),
-    new THREE.MeshBasicMaterial({
-      map: createBannerTexture(),
-      transparent: true,
-      side: THREE.DoubleSide,
-    }),
-  )
-  banner.position.set(
-    course.finish.center.x,
-    course.finish.center.y + 2.1,
-    course.finish.center.z - 4.1,
-  )
-  group.add(beam, banner)
-  return { group, beam }
-}
-
-function createBannerTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas")
-  canvas.width = 1024
-  canvas.height = 192
-  const context = canvas.getContext("2d")
-  if (context === null) throw new Error("2D canvas context unavailable for the finish banner")
-  context.fillStyle = PALETTE.ink
-  context.fillRect(0, 0, canvas.width, canvas.height)
-  context.fillStyle = PALETTE.finish
-  for (let index = 0; index < 16; index += 1) {
-    if (index % 2 === 0) context.fillRect(index * 64, 0, 64, 26)
-    else context.fillRect(index * 64, canvas.height - 26, 64, 26)
-  }
-  context.fillStyle = "#FFFFFF"
-  context.font = "700 104px system-ui, sans-serif"
-  context.textAlign = "center"
-  context.textBaseline = "middle"
-  context.fillText("FINISH", canvas.width / 2, canvas.height / 2 + 4)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  return texture
+  return { group, entries, instanced }
 }

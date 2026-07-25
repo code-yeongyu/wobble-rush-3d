@@ -44,6 +44,9 @@ export class ParticlePool {
   private readonly colors: Float32Array
   private readonly sizes: Float32Array
   private readonly particles: Particle[]
+  private readonly positionAttribute: THREE.BufferAttribute
+  private readonly colorAttribute: THREE.BufferAttribute
+  private readonly sizeAttribute: THREE.BufferAttribute
   private cursor = 0
 
   constructor(capacity: number, size: number, blending: THREE.Blending) {
@@ -61,9 +64,12 @@ export class ParticlePool {
     }))
 
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3))
-    geometry.setAttribute("color", new THREE.BufferAttribute(this.colors, 3))
-    geometry.setAttribute("size", new THREE.BufferAttribute(this.sizes, 1))
+    this.positionAttribute = new THREE.BufferAttribute(this.positions, 3)
+    this.colorAttribute = new THREE.BufferAttribute(this.colors, 3)
+    this.sizeAttribute = new THREE.BufferAttribute(this.sizes, 1)
+    geometry.setAttribute("position", this.positionAttribute)
+    geometry.setAttribute("color", this.colorAttribute)
+    geometry.setAttribute("pointSize", this.sizeAttribute)
 
     const material = new THREE.PointsMaterial({
       size,
@@ -74,6 +80,13 @@ export class ParticlePool {
       blending,
       sizeAttenuation: true,
     })
+    // PointsMaterial has no per-point size channel; patch one in so particles
+    // shrink as they die instead of popping out of existence.
+    material.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute float pointSize;")
+        .replace("gl_PointSize = size;", "gl_PointSize = size * pointSize;")
+    }
     this.points = new THREE.Points(geometry, material)
     this.points.frustumCulled = false
   }
@@ -104,9 +117,11 @@ export class ParticlePool {
   }
 
   update(dt: number): void {
+    let changed = false
     for (let index = 0; index < this.particles.length; index += 1) {
       const particle = this.particles[index]
       if (particle === undefined || particle.life <= 0) continue
+      changed = true
       particle.life -= dt
       particle.vy -= particle.gravity * dt
       const base = index * 3
@@ -121,13 +136,14 @@ export class ParticlePool {
       this.sizes[index] = ratio
       if (particle.life <= 0) {
         this.positions[base + 1] = -9999
+        this.sizes[index] = 0
       }
     }
-    const geometry = this.points.geometry
-    const position = geometry.getAttribute("position")
-    const color = geometry.getAttribute("color")
-    position.needsUpdate = true
-    color.needsUpdate = true
+    // Skip the GPU upload entirely on idle frames.
+    if (!changed) return
+    this.positionAttribute.needsUpdate = true
+    this.colorAttribute.needsUpdate = true
+    this.sizeAttribute.needsUpdate = true
   }
 
   dispose(): void {
