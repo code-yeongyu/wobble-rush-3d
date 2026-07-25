@@ -55,16 +55,16 @@ function deck(
 }
 
 export const PALETTE = {
-  deckAqua: "#5CC9F5",
-  deckSun: "#FFD25E",
-  deckRest: "#8FE870",
-  deckBridge: "#FFA94D",
-  deckRamp: "#FF87C3",
-  hazard: "#FF5A6E",
+  deckAqua: "#2FB3E8",
+  deckSun: "#FFC02E",
+  deckRest: "#5FD44A",
+  deckBridge: "#FF8A1F",
+  deckRamp: "#FF5FA8",
+  hazard: "#F5273F",
   hazardStripe: "#FFD400",
-  bumper: "#FF7AD9",
-  mover: "#A98BFF",
-  finish: "#FFE45E",
+  bumper: "#F857C4",
+  mover: "#8B62FF",
+  finish: "#FFD62E",
   ink: "#2A2440",
   skyTop: "#7FA8FF",
   skyHorizon: "#FFE0C0",
@@ -88,36 +88,48 @@ const platforms: readonly Platform[] = [
   deck("start-plaza", "start", PALETTE.deckSun, -6.5, 6.5, -9, 6),
 
   // --- Segment 1: sweeper lane ------------------------------------------------
-  deck("lane-sweeper", "path", PALETTE.deckAqua, -3.6, 3.6, 6, 36),
+  // Wide enough that a sweeper hit knocks you around rather than straight off.
+  deck("lane-sweeper", "path", PALETTE.deckAqua, -5.2, 5.2, 6, 22),
+  deck("pad-cp1", "path", PALETTE.deckRest, -5.2, 5.2, 22, 26),
+  deck("lane-sweeper-2", "path", PALETTE.deckAqua, -5.2, 5.2, 26, 40),
 
-  // --- Segment 2: first rest pad / checkpoint ---------------------------------
-  deck("pad-cp1", "path", PALETTE.deckRest, -4.6, 4.6, 36, 42),
+  // --- Segment 2: rest pad / checkpoint ---------------------------------------
+  deck("pad-cp2", "path", PALETTE.deckRest, -5, 5, 40, 45),
 
-  // --- Segment 3: ferry crossing (gap between the pads is the hazard) ---------
-  deck("island-mid", "path", PALETTE.deckSun, -3.6, 3.6, 58, 63.5),
-  deck("pad-cp2", "path", PALETTE.deckRest, 4, 11, 69, 75),
+  // --- Segment 3: the hop chain ------------------------------------------------
+  // Three islands with 3.2 m gaps: always clearable with one jump, so a mistimed
+  // ride is a fall you recover from, never a dead end. The sliding platforms
+  // sweep through the gaps as both a shortcut and a shove.
+  deck("hop-1", "path", PALETTE.deckSun, -3.2, 3.2, 48.2, 52.6),
+  deck("hop-2", "path", PALETTE.deckSun, -3.2, 3.2, 55.8, 60.2),
+  deck("hop-3", "path", PALETTE.deckSun, 0.4, 6.8, 63.4, 67.8),
+  deck("pad-cp3", "path", PALETTE.deckRest, 4, 11, 71, 76),
 
   // --- Segment 4: bumper field ------------------------------------------------
-  deck("lane-bumper", "path", PALETTE.deckAqua, 3.4, 11.6, 75, 99),
+  deck("lane-bumper", "path", PALETTE.deckAqua, 2.6, 12.4, 76, 100),
 
   // --- Segment 5: rest pad / checkpoint ---------------------------------------
-  deck("pad-cp3", "path", PALETTE.deckRest, 4, 11, 99, 104),
+  deck("pad-cp4", "path", PALETTE.deckRest, 4, 11, 100, 105),
 
   // --- Segment 6: the narrow bridge -------------------------------------------
-  deck("bridge", "bridge", PALETTE.deckBridge, 6.45, 8.55, 104, 128),
+  // 2.8 m for a 0.9 m runner: tense, but you can correct a wobble.
+  deck("bridge", "bridge", PALETTE.deckBridge, 6.1, 8.9, 105, 127),
 
   // --- Segment 7: rest pad / checkpoint ---------------------------------------
-  deck("pad-cp4", "path", PALETTE.deckRest, 4.5, 10.5, 128, 133),
+  deck("pad-cp5", "path", PALETTE.deckRest, 4.5, 10.5, 127, 133),
 
-  // --- Segment 8: the climb — chunky toy steps into the finish gate -----------
-  deck("ramp-1", "ramp", PALETTE.deckRamp, 4.5, 10.5, 133, 134.6, 0.45),
-  deck("ramp-2", "ramp", PALETTE.deckRamp, 4.5, 10.5, 134.6, 136.2, 0.9),
-  deck("ramp-3", "ramp", PALETTE.deckRamp, 4.5, 10.5, 136.2, 137.8, 1.35),
-  deck("ramp-4", "ramp", PALETTE.deckRamp, 4.5, 10.5, 137.8, 139.4, 1.8),
-  deck("ramp-5", "ramp", PALETTE.deckRamp, 4.5, 10.5, 139.4, 141, 2.25),
+  // --- Segment 8: the climb — shallow toy steps into the finish gate ---------
+  deck("ramp-1", "ramp", PALETTE.deckRamp, 4.5, 10.5, 133.0, 133.9, 0.15),
+  deck("ramp-2", "ramp", PALETTE.deckRamp, 4.5, 10.5, 133.9, 134.8, 0.3),
+  deck("ramp-3", "ramp", PALETTE.deckRamp, 4.5, 10.5, 134.8, 135.7, 0.45),
+  deck("ramp-4", "ramp", PALETTE.deckRamp, 4.5, 10.5, 135.7, 136.6, 0.6),
+  deck("ramp-5", "ramp", PALETTE.deckRamp, 4.5, 10.5, 136.6, 137.5, 0.75),
+  deck("ramp-6", "ramp", PALETTE.deckRamp, 4.5, 10.5, 137.5, 138.4, 0.9),
+  deck("ramp-7", "ramp", PALETTE.deckRamp, 4.5, 10.5, 138.4, 139.3, 1.05),
+  deck("ramp-8", "ramp", PALETTE.deckRamp, 4.5, 10.5, 139.3, 140.2, 1.2),
 
   // --- Segment 9: finish plateau ----------------------------------------------
-  deck("finish-plateau", "finish", PALETTE.finish, 3, 12, 141, 152, 2.25),
+  deck("finish-plateau", "finish", PALETTE.finish, 3, 12, 140.2, 152, 1.2),
 ]
 
 const sweeper = (
@@ -126,7 +138,7 @@ const sweeper = (
   armLength: number,
   angularVelocityDeg: number,
   phaseDeg: number,
-  knockbackSpeed = 11,
+  knockbackSpeed = 7.5,
 ): SweeperSpec => ({
   kind: "sweeper",
   id: asObstacleId(id),
@@ -137,7 +149,7 @@ const sweeper = (
   angularVelocityDeg,
   phaseDeg,
   knockbackSpeed,
-  knockbackLift: 5.5,
+  knockbackLift: 4.2,
   color: PALETTE.hazard,
 })
 
@@ -156,47 +168,60 @@ const bumper = (id: string, x: number, z: number, radius = 1.1): BumperSpec => (
 const obstacles: readonly (SweeperSpec | MoverSpec | BumperSpec)[] = [
   // Sweeper lane — three arms, alternating direction, speeding up as you go.
   // Arm underside sits 0.55 m above the deck: a full jump clears it, a walk does not.
-  sweeper("sweep-1", { x: 0, y: 0.9, z: 14 }, 4.6, 95, 0),
-  sweeper("sweep-2", { x: 0, y: 0.9, z: 24 }, 4.6, -110, 140),
-  sweeper("sweep-3", { x: 0, y: 0.9, z: 33 }, 4.6, 125, 60),
+  sweeper("sweep-1", { x: 0, y: 0.9, z: 13 }, 5.4, 85, 0),
+  sweeper("sweep-2", { x: 0, y: 0.9, z: 19 }, 5.4, -100, 140),
+  sweeper("sweep-3", { x: 0, y: 0.9, z: 31 }, 5.4, 115, 60),
+  sweeper("sweep-4", { x: 0, y: 0.9, z: 37 }, 5.4, -130, 210),
 
-  // Ferry across the first void: a shuttle that bridges pad-cp1 to island-mid.
+  // Sliding platforms sweep across the hop-chain gaps: ride one for a free crossing,
+  // or jump the gap yourself. Either way the route is always completable.
   {
     kind: "mover",
-    id: asObstacleId("ferry-1"),
-    from: { x: 0, y: -0.35, z: 45.5 },
-    to: { x: 0, y: -0.35, z: 55.5 },
-    halfExtents: { x: 2.8, y: 0.35, z: 2.8 },
-    travelSec: 3,
-    dwellSec: 1.2,
+    id: asObstacleId("slider-1"),
+    from: { x: -7.5, y: -0.35, z: 54.2 },
+    to: { x: 7.5, y: -0.35, z: 54.2 },
+    halfExtents: { x: 2.4, y: 0.35, z: 1.5 },
+    travelSec: 3.4,
+    dwellSec: 0.8,
     phaseSec: 0,
     color: PALETTE.mover,
   },
-  // Second crossing: a sideways slider that carries you from the island out to pad-cp2.
   {
     kind: "mover",
-    id: asObstacleId("ferry-2"),
-    from: { x: 0, y: -0.35, z: 66.5 },
-    to: { x: 6.5, y: -0.35, z: 66.5 },
-    halfExtents: { x: 2.4, y: 0.35, z: 2.4 },
-    travelSec: 2.6,
-    dwellSec: 1,
-    phaseSec: 1.3,
+    id: asObstacleId("slider-2"),
+    from: { x: 9, y: -0.35, z: 61.8 },
+    to: { x: -5.5, y: -0.35, z: 61.8 },
+    halfExtents: { x: 2.4, y: 0.35, z: 1.5 },
+    travelSec: 3,
+    dwellSec: 0.7,
+    phaseSec: 1.6,
+    color: PALETTE.mover,
+  },
+  // A rideable lift that ferries you from the last island onto the checkpoint pad.
+  {
+    kind: "mover",
+    id: asObstacleId("ferry-1"),
+    from: { x: 5.6, y: -0.35, z: 68.4 },
+    to: { x: 7.5, y: -0.35, z: 70.6 },
+    halfExtents: { x: 2.6, y: 0.35, z: 1.9 },
+    travelSec: 2,
+    dwellSec: 0.9,
+    phaseSec: 0,
     color: PALETTE.mover,
   },
 
   // Bumper field — six bobbing domes that pop you sideways.
-  bumper("bump-1", 5.5, 79),
-  bumper("bump-2", 9.5, 82),
-  bumper("bump-3", 7.5, 86),
-  bumper("bump-4", 4.6, 89.5),
-  bumper("bump-5", 10.4, 90.5),
-  bumper("bump-6", 7.5, 94),
+  bumper("bump-1", 5, 80),
+  bumper("bump-2", 10, 83.5),
+  bumper("bump-3", 7.5, 87),
+  bumper("bump-4", 4.4, 90.5),
+  bumper("bump-5", 10.6, 91.5),
+  bumper("bump-6", 7.5, 95),
   // One last arm guarding the exit of the bumper field.
-  sweeper("sweep-4", { x: 7.5, y: 0.9, z: 96.5 }, 4.2, -115, 200),
+  sweeper("sweep-5", { x: 7.5, y: 0.9, z: 98 }, 4.6, -115, 200, 6),
 
-  // The bridge sweeper: slow, long telegraph, but the deck is only 2.1 m wide.
-  sweeper("sweep-bridge", { x: 7.5, y: 0.9, z: 114 }, 3.6, 82, 25, 8.5),
+  // The bridge sweeper: slow, long telegraph, and a gentle shove — the drop does the work.
+  sweeper("sweep-bridge", { x: 7.5, y: 0.9, z: 115 }, 3.4, 74, 25, 4.5),
 ]
 
 const checkpointBox = (x0: number, x1: number, z0: number, z1: number, top = 0): BoxCollider =>
@@ -216,29 +241,36 @@ const checkpoints: readonly Checkpoint[] = [
   {
     index: asCheckpointIndex(1),
     id: asObstacleId("cp-1"),
-    respawn: { x: 0, y: 1.1, z: 39 },
-    trigger: checkpointBox(-4.6, 4.6, 36, 42),
-    label: "Sweepers cleared",
+    respawn: { x: 0, y: 1.1, z: 24 },
+    trigger: checkpointBox(-5.2, 5.2, 22, 26),
+    label: "First sweepers cleared",
   },
   {
     index: asCheckpointIndex(2),
     id: asObstacleId("cp-2"),
-    respawn: { x: 7.5, y: 1.1, z: 72 },
-    trigger: checkpointBox(4, 11, 69, 75),
-    label: "Ferries cleared",
+    respawn: { x: 0, y: 1.1, z: 42.5 },
+    trigger: checkpointBox(-5, 5, 40, 45),
+    label: "Sweeper lane cleared",
   },
   {
     index: asCheckpointIndex(3),
     id: asObstacleId("cp-3"),
-    respawn: { x: 7.5, y: 1.1, z: 101.5 },
-    trigger: checkpointBox(4, 11, 99, 104),
-    label: "Bumpers cleared",
+    respawn: { x: 7.5, y: 1.1, z: 73.5 },
+    trigger: checkpointBox(4, 11, 71, 76),
+    label: "Hop chain cleared",
   },
   {
     index: asCheckpointIndex(4),
     id: asObstacleId("cp-4"),
-    respawn: { x: 7.5, y: 1.1, z: 130.5 },
-    trigger: checkpointBox(4.5, 10.5, 128, 133),
+    respawn: { x: 7.5, y: 1.1, z: 102.5 },
+    trigger: checkpointBox(4, 11, 100, 105),
+    label: "Bumpers cleared",
+  },
+  {
+    index: asCheckpointIndex(5),
+    id: asObstacleId("cp-5"),
+    respawn: { x: 7.5, y: 1.1, z: 130 },
+    trigger: checkpointBox(4.5, 10.5, 127, 133),
     label: "Bridge cleared",
   },
 ]
@@ -246,27 +278,27 @@ const checkpoints: readonly Checkpoint[] = [
 /** Ordered path hints for NPC navigation — the centre line of the intended route. */
 const waypoints: readonly Vec3[] = [
   { x: 0, y: 0, z: 2 },
-  { x: 0, y: 0, z: 11 },
-  { x: 0, y: 0, z: 19 },
-  { x: 0, y: 0, z: 29 },
-  { x: 0, y: 0, z: 39 },
-  { x: 0, y: 0, z: 47 },
-  { x: 0, y: 0, z: 54 },
-  { x: 0, y: 0, z: 61 },
-  { x: 1.5, y: 0, z: 66.5 },
-  { x: 6.5, y: 0, z: 67 },
-  { x: 7.5, y: 0, z: 72 },
-  { x: 6, y: 0, z: 80 },
-  { x: 9, y: 0, z: 85 },
-  { x: 7.5, y: 0, z: 92 },
-  { x: 7.5, y: 0, z: 101.5 },
+  { x: 0, y: 0, z: 10 },
+  { x: 0, y: 0, z: 16 },
+  { x: 0, y: 0, z: 24 },
+  { x: 0, y: 0, z: 34 },
+  { x: 0, y: 0, z: 42.5 },
+  { x: 0, y: 0, z: 50.4 },
+  { x: 0, y: 0, z: 58 },
+  { x: 3.6, y: 0, z: 65.6 },
+  { x: 7, y: 0, z: 70 },
+  { x: 7.5, y: 0, z: 73.5 },
+  { x: 6.5, y: 0, z: 81 },
+  { x: 8.6, y: 0, z: 86 },
+  { x: 7.5, y: 0, z: 93 },
+  { x: 7.5, y: 0, z: 102.5 },
   { x: 7.5, y: 0, z: 110 },
   { x: 7.5, y: 0, z: 119 },
-  { x: 7.5, y: 0, z: 126 },
-  { x: 7.5, y: 0, z: 130.5 },
-  { x: 7.5, y: 1.4, z: 137 },
-  { x: 7.5, y: 2.25, z: 143 },
-  { x: 7.5, y: 2.25, z: 148 },
+  { x: 7.5, y: 0, z: 125 },
+  { x: 7.5, y: 0, z: 130 },
+  { x: 7.5, y: 0.6, z: 136 },
+  { x: 7.5, y: 1.2, z: 142 },
+  { x: 7.5, y: 1.2, z: 148 },
 ]
 
 export const SUNRISE_SCRAMBLE: CourseDefinition = {
@@ -277,7 +309,7 @@ export const SUNRISE_SCRAMBLE: CourseDefinition = {
   platforms,
   obstacles,
   checkpoints,
-  finish: box({ x: 7.5, y: 3.6, z: 146.5 }, { x: 4.5, y: 2.4, z: 5.5 }),
+  finish: box({ x: 7.5, y: 2.6, z: 146.5 }, { x: 4.5, y: 2.4, z: 5.5 }),
   killY: -14,
   waypoints,
 }
