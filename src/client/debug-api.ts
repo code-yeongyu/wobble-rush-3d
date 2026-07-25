@@ -10,11 +10,15 @@
 export type WobbleSnapshot = {
   readonly phase: string
   readonly raceMs: number
+  /** Time obstacles and NPCs are sampled at; shared across a party. */
+  readonly worldTimeSec: number
   readonly checkpoint: number
   readonly position: { readonly x: number; readonly y: number; readonly z: number }
   readonly remotes: number
   readonly npcs: number
   readonly npcProgress: readonly number[]
+  /** Forward position of each remote runner, for verifying the relay. */
+  readonly remoteProgress: readonly number[]
   readonly room: string | null
 }
 

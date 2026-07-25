@@ -46,7 +46,32 @@ export async function runMultiplayer(driver: Driver, browser: Browser): Promise<
   )
   await driver.waitFor(guest, (s) => s.remotes >= 1, 25_000, "guest never saw the host avatar")
   console.log(`multiplayer: host sees ${seen.remotes} remote runner(s)`)
-  await host.waitForTimeout(9000)
+
+  // Both clients must drive obstacles and NPCs from the same world clock, or they
+  // are watching different sweepers in what is supposed to be the same race.
+  const [hostClock, guestClock] = await Promise.all([
+    driver.readState(host),
+    driver.readState(guest),
+  ])
+  const skew = Math.abs(hostClock.worldTimeSec - guestClock.worldTimeSec)
+  if (skew > 0.75) {
+    throw new ScenarioFailure("multiplayer", `world clocks disagree by ${skew.toFixed(2)}s`)
+  }
+  console.log(`multiplayer: world clocks agree within ${skew.toFixed(3)}s`)
+
+  // Remote runners must actually move, not merely exist.
+  const firstProgress = seen.remoteProgress
+  await host.waitForTimeout(2500)
+  const moved = await driver.readState(host)
+  const advanced = moved.remoteProgress.some(
+    (z, index) => Math.abs(z - (firstProgress[index] ?? z)) > 1,
+  )
+  if (!advanced) {
+    throw new ScenarioFailure("multiplayer", "the remote runner never moved on the host's screen")
+  }
+  console.log("multiplayer: remote runner position advances on the host screen")
+
+  await host.waitForTimeout(6500)
   await host.screenshot({ path: `${driver.outDir}/multiplayer-host.png` })
   await guest.screenshot({ path: `${driver.outDir}/multiplayer-guest.png` })
 

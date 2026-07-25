@@ -89,7 +89,14 @@ export class RaceDirector {
   }
 
   backToMenu(): void {
-    const { clock, audio, ui } = this.ports
+    const { clock, audio, ui, party, remotes } = this.ports
+    // Leaving the menu must also leave the room, or a stale socket keeps
+    // pushing this client's next solo run around.
+    if (this.mode === "party") {
+      party.leave()
+      remotes.clear()
+      this.mode = "solo"
+    }
     clock.idle()
     audio.stopMusic()
     this.resetRunners()
@@ -116,14 +123,17 @@ export class RaceDirector {
         ui.resetReadyButton()
         ui.show("lobby")
         break
-      case "countdown":
+      case "countdown": {
         this.resetRunners()
-        clock.beginCountdown(
-          endsAtMs === null ? NET.countdownSec : Math.max(0, (endsAtMs - serverNowMs) / 1000),
-        )
+        // Anchor the world clock to the server's countdown so every client drives
+        // obstacles and NPCs from the same time base.
+        const remaining =
+          endsAtMs === null ? NET.countdownSec : Math.max(0, (endsAtMs - serverNowMs) / 1000)
+        clock.beginCountdown(remaining, Math.max(0, NET.countdownSec - remaining))
         ui.show("hud")
         audio.startMusic()
         break
+      }
       case "racing":
         clock.startRacing()
         ui.setCountdown(null)

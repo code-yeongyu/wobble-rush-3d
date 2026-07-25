@@ -12,6 +12,7 @@ import { RUNNER_COLORS, SUNRISE_SCRAMBLE } from "../shared/course"
 import type { PlayerId } from "../shared/types"
 import { createWorldSnapshot } from "../shared/world"
 import { AudioKit } from "./audio"
+import { createOrbit, updateOrbit } from "./camera-math"
 import { CameraRig } from "./camera-rig"
 import { CourseView } from "./course-view"
 import { installDebugApi } from "./debug-api"
@@ -55,8 +56,7 @@ export class Game {
 
   private selfId: PlayerId | null = null
   private roomCode: string | null = null
-  private simTime = 0
-  private orbitYaw = 0
+  private orbit = createOrbit(SUNRISE_SCRAMBLE.spawnYaw)
 
   constructor(root: HTMLElement) {
     this.reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -93,7 +93,7 @@ export class Game {
       party: this.party,
       course: this.course,
       onRunnersReset: () => {
-        this.orbitYaw = this.course.spawnYaw
+        this.orbit = createOrbit(this.course.spawnYaw)
       },
     })
     this.kit.scene.add(this.courseView.group, this.effects.group)
@@ -106,11 +106,13 @@ export class Game {
       state: () => ({
         phase: this.clock.phase,
         raceMs: this.clock.raceMs,
+        worldTimeSec: this.clock.worldTimeSec,
         checkpoint: this.runner.sim.checkpoint,
         position: { ...this.runner.sim.position },
         remotes: this.remotes.count,
         npcs: this.npcs.size,
         npcProgress: this.npcs.progress(),
+        remoteProgress: this.remotes.progress(),
         room: this.roomCode,
       }),
       autopilot: (enabled) => this.runner.setAutopilot(enabled),
@@ -164,10 +166,10 @@ export class Game {
   }
 
   private stepSimulation(dt: number): void {
-    this.simTime += dt
-    const world = createWorldSnapshot(this.course, this.simTime)
-
+    // Advance the clock first: it owns the world time every obstacle and NPC is
+    // sampled at, so the snapshot below must be taken after the step.
     const tick = this.clock.tick(dt, this.director.currentMode === "solo")
+    const world = createWorldSnapshot(this.course, this.clock.worldTimeSec)
     if (this.clock.phase === "countdown" || tick.started) this.ui.setCountdown(tick.label)
     if (tick.started) {
       this.audio.play("go")
@@ -176,9 +178,9 @@ export class Game {
     if (this.clock.phase === "racing") this.ui.setTimer(this.clock.raceMs)
 
     const locked = this.clock.locked
-    const manual = this.input.sample(this.orbitYaw, locked)
+    const manual = this.input.sample(this.orbit.yaw, locked)
     if (!locked || this.runner.autopilotActive) {
-      const events = this.runner.step(world, this.simTime, dt, manual)
+      const events = this.runner.step(world, this.clock.worldTimeSec, dt, manual)
       if (applyEvents(events, this.ports, true).finished && this.clock.phase === "racing")
         this.finishRace()
     }
@@ -190,7 +192,7 @@ export class Game {
     }
 
     this.npcs.step(
-      { world, timeSec: this.simTime, dt, locked, raceMs: this.clock.raceMs },
+      { world, timeSec: this.clock.worldTimeSec, dt, locked, raceMs: this.clock.raceMs },
       (npcEvents) => {
         applyEvents(npcEvents, this.ports, false)
       },
@@ -223,15 +225,15 @@ export class Game {
   }
 
   private render(dt: number, nowMs: number): void {
-    this.courseView.update(this.simTime, this.reducedMotion)
+    this.courseView.update(this.clock.worldTimeSec, this.reducedMotion)
     this.runner.render(dt)
     this.npcs.render(dt)
     this.remotes.render(nowMs, dt)
     this.effects.update(dt)
 
     const sim = this.runner.sim
-    this.orbitYaw = this.camera.followHeading(sim.velocity, this.input.takeDragYaw(), dt)
-    this.camera.update(sim.position, sim.velocity, this.orbitYaw, dt, this.reducedMotion)
+    this.orbit = updateOrbit(this.orbit, this.input.takeOrbitDelta(), sim.velocity, dt)
+    this.camera.update(sim.position, sim.velocity, this.orbit, dt, this.reducedMotion)
     this.kit.sun.position.set(sim.position.x + 28, 46, sim.position.z - 18)
     this.kit.sun.target.position.set(sim.position.x, 0, sim.position.z)
     this.kit.sun.target.updateMatrixWorld()

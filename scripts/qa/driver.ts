@@ -15,11 +15,13 @@ declare global {
 export type WobbleState = {
   phase: string
   raceMs: number
+  worldTimeSec: number
   checkpoint: number
   position: { x: number; y: number; z: number }
   remotes: number
   npcs: number
   npcProgress: number[]
+  remoteProgress: number[]
   room: string | null
 }
 

@@ -10,6 +10,7 @@ export class RaceClock {
   private state: RacePhase = "idle"
   private elapsedMs = 0
   private countdown = 0
+  private worldSec = 0
 
   get phase(): RacePhase {
     return this.state
@@ -24,10 +25,26 @@ export class RaceClock {
     return this.state !== "racing"
   }
 
-  beginCountdown(seconds: number): void {
+  /**
+   * Time fed to obstacle kinematics and the NPC brains.
+   *
+   * Anchored to the countdown rather than to page load: every client in a party
+   * is told the same countdown by the server, so they all drive the world from
+   * the same clock and see identical sweepers, platforms and AI trajectories.
+   */
+  get worldTimeSec(): number {
+    return this.worldSec
+  }
+
+  /**
+   * `worldStartSec` is how much of the countdown has already elapsed on the
+   * server, so a client that joins the countdown late still lines up.
+   */
+  beginCountdown(seconds: number, worldStartSec = 0): void {
     this.state = "countdown"
     this.countdown = seconds
     this.elapsedMs = 0
+    this.worldSec = Math.max(0, worldStartSec)
   }
 
   /** Server-driven races skip the local countdown and start on command. */
@@ -42,6 +59,7 @@ export class RaceClock {
   idle(): void {
     this.state = "idle"
     this.elapsedMs = 0
+    this.worldSec = 0
   }
 
   /**
@@ -52,6 +70,7 @@ export class RaceClock {
     dt: number,
     autoStart: boolean,
   ): { readonly label: string | null; readonly started: boolean } {
+    if (this.state !== "idle") this.worldSec += dt
     if (this.state === "countdown") {
       this.countdown -= dt
       if (this.countdown > 0) return { label: String(Math.ceil(this.countdown)), started: false }
