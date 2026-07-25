@@ -41,6 +41,25 @@ export class CameraRig {
     this.apply()
   }
 
+  /**
+   * Eases the orbit toward the direction of travel; a pointer drag takes over
+   * immediately so the player can always look where they want.
+   */
+  followHeading(velocity: MutVec3, dragYaw: number, dt: number): number {
+    if (dragYaw !== 0) {
+      this.yaw += dragYaw
+      return this.yaw
+    }
+    if (Math.hypot(velocity.x, velocity.z) > 1.5) {
+      const heading = Math.atan2(velocity.x, velocity.z)
+      let delta = heading - this.yaw
+      while (delta > Math.PI) delta -= Math.PI * 2
+      while (delta < -Math.PI) delta += Math.PI * 2
+      this.yaw += delta * Math.min(1, dt * 2.4)
+    }
+    return this.yaw
+  }
+
   addShake(amount: number): void {
     this.shake = Math.min(1, this.shake + amount)
   }
