@@ -35,7 +35,11 @@ async function build(): Promise<void> {
   }
 
   await cp("src/client/index.html", `${OUT_DIR}/index.html`)
-  await cp("src/client/style.css", `${OUT_DIR}/assets/style.css`)
+  const cssParts = ["base", "lobby", "hud", "finish"]
+  const css = await Promise.all(
+    cssParts.map((part) => Bun.file(`src/client/styles/${part}.css`).text()),
+  )
+  await Bun.write(`${OUT_DIR}/assets/style.css`, css.join("\n"))
 
   const bytes = result.outputs.reduce((total, output) => total + output.size, 0)
   console.log(`built ${result.outputs.length} files, ${(bytes / 1024).toFixed(0)} kB → ${OUT_DIR}/`)
