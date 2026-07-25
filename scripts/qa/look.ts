@@ -1,5 +1,6 @@
 /** Ad-hoc visual check: capture the game at a few moments for eyeballing. */
 import { chromium } from "@playwright/test"
+import "./driver"
 
 const base = Bun.argv[2] ?? "http://localhost:8787"
 const browser = await chromium.launch({
@@ -17,7 +18,7 @@ await page.screenshot({ path: "evidence/look-countdown.png" })
 await page.waitForTimeout(2600)
 await page.screenshot({ path: "evidence/look-race-begin.png" })
 await page.evaluate(() => {
-  const api = (globalThis as unknown as { wobble?: { autopilot(value: boolean): void } }).wobble
+  const api = globalThis.wobble
   if (api === undefined) throw new Error("window.wobble debug API is unavailable")
   api.autopilot(true)
 })

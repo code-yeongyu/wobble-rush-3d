@@ -7,7 +7,8 @@ import * as THREE from "three"
 import { NET } from "../shared/constants"
 import { RUNNER_COLORS } from "../shared/course"
 import type { RemoteRunnerState, RoomSnapshot } from "../shared/room"
-import type { CheckpointIndex, PlayerId, RunnerSim } from "../shared/types"
+import type { PlayerId, RunnerSim } from "../shared/types"
+import { asCheckpointIndex } from "../shared/types"
 import { RunnerView } from "./runner-view"
 
 type Sample = { readonly state: RemoteRunnerState; readonly atMs: number }
@@ -117,7 +118,7 @@ function toSim(older: RemoteRunnerState, newer: RemoteRunnerState, alpha: number
     stumbleTimer: newer.st === "stumble" ? 1 : 0,
     jumpRising: false,
     state: newer.st,
-    checkpoint: newer.cp as CheckpointIndex,
+    checkpoint: asCheckpointIndex(newer.cp),
     carry: { x: 0, y: 0, z: 0 },
   }
 }

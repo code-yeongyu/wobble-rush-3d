@@ -7,6 +7,11 @@
 import { mkdir, readdir, rename } from "node:fs/promises"
 import type { Browser, BrowserContext, Page } from "@playwright/test"
 
+declare global {
+  /** Injected by the game at boot; see src/client/debug-api.ts. */
+  var wobble: { state(): WobbleState; autopilot(value: boolean): void } | undefined
+}
+
 export type WobbleState = {
   phase: string
   raceMs: number
@@ -48,7 +53,7 @@ export function createDriver(options: DriverOptions) {
 
   const readState = (page: Page): Promise<WobbleState> =>
     page.evaluate(() => {
-      const api = (globalThis as unknown as { wobble?: { state(): WobbleState } }).wobble
+      const api = globalThis.wobble
       if (api === undefined) throw new Error("window.wobble debug API is unavailable")
       return api.state()
     })
@@ -108,7 +113,7 @@ export function createDriver(options: DriverOptions) {
 
   const setAutopilot = (page: Page, on: boolean): Promise<void> =>
     page.evaluate((enabled) => {
-      const api = (globalThis as unknown as { wobble?: { autopilot(value: boolean): void } }).wobble
+      const api = globalThis.wobble
       if (api === undefined) throw new Error("window.wobble debug API is unavailable")
       api.autopilot(enabled)
     }, on)

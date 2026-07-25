@@ -71,3 +71,9 @@ for (let i = 0; i < racers.length; i++) {
       `${f === null ? `STUCK maxZ=${top.toFixed(1)} (last progress ${stuck.sec.toFixed(0)}s, wp=${racer.waypointIndex})` : `finished ${f.toFixed(1)}s`} falls=${falls[i] ?? 0}`,
   )
 }
+
+const stuck = finished.filter((f) => f === null).length
+if (stuck > 0) {
+  console.error(`${stuck} of ${racers.length} racers could not finish the course`)
+  process.exit(1)
+}

@@ -15,6 +15,7 @@ class BuildFailedError extends Error {
   constructor(logs: readonly string[]) {
     super(`Client bundle failed:\n${logs.join("\n")}`)
     this.name = "BuildFailedError"
+    this.logs = logs
   }
 }
 

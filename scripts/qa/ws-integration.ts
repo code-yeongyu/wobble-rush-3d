@@ -129,6 +129,21 @@ async function main(): Promise<void> {
     "the guest receives the host's broadcast position",
   )
 
+  // Relay rate: a client sending at NET.stateHz must reach the other client at
+  // roughly that rate. Before the relay fix this was pinned to the 1 Hz alarm.
+  const before = guest.inbox.filter((m) => m.type === "states").length
+  const sendCount = 15
+  for (let index = 0; index < sendCount; index += 1) {
+    host.send({ type: "state", p: [0, 1, index], v: [0, 0, 8], yaw: 0, st: "run", cp: 1 })
+    await Bun.sleep(1000 / sendCount)
+  }
+  await Bun.sleep(250)
+  const relayed = guest.inbox.filter((m) => m.type === "states").length - before
+  check(
+    relayed >= sendCount - 3,
+    `relayed ${relayed} of ${sendCount} updates within a second (>= ${sendCount - 3})`,
+  )
+
   host.send({ type: "finish", timeMs: 42_000 })
   guest.send({ type: "finish", timeMs: 51_500 })
   const results = await host.waitFor("results", undefined, 15000)
