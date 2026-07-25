@@ -128,12 +128,18 @@ const detectJumpCondition = (
   if (dist <= 1e-6) {
     return false
   }
-  const probe: Vec3 = {
-    x: sim.position.x + dirX * NPC.jumpLookAhead,
-    y: sim.position.y - GAP_PROBE_DROP,
-    z: sim.position.z + dirZ * NPC.jumpLookAhead,
-  }
-  return world.hasFallen(probe)
+  // Look ahead for a hole: `hasFallen` only reports "already fell", so ask the
+  // world what supports the column the runner is about to enter.
+  //
+  // The probe distance is speed-derived on purpose. A fixed look-ahead makes a
+  // fast runner jump far too early and land inside the gap it was avoiding; this
+  // keeps take-off just short of the ledge whatever the runner's speed.
+  const speed = Math.hypot(sim.velocity.x, sim.velocity.z)
+  const lookAhead = Math.min(NPC.jumpLookAhead, speed * (NPC.reactionSec + 0.06) + 0.5)
+  const aheadX = sim.position.x + dirX * lookAhead
+  const aheadZ = sim.position.z + dirZ * lookAhead
+  const support = world.supportHeightAt(aheadX, aheadZ, sim.position.y)
+  return support === null || sim.position.y - support > GAP_PROBE_DROP
 }
 
 /**

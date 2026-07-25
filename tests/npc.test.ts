@@ -37,7 +37,10 @@ const makeCourse = (waypoints: readonly Vec3[]): CourseDefinition => ({
   waypoints,
 })
 
-const makeWorld = (hasFallen: (position: Vec3) => boolean = () => false): WorldSnapshot => ({
+const makeWorld = (
+  hasFallen: (position: Vec3) => boolean = () => false,
+  supportHeightAt: (x: number, z: number, fromY: number) => number | null = () => 0,
+): WorldSnapshot => ({
   timeSec: 0,
   resolve: (_previous, desired, velocity) => ({
     position: desired,
@@ -49,6 +52,7 @@ const makeWorld = (hasFallen: (position: Vec3) => boolean = () => false): WorldS
   checkpointAt: () => null,
   isFinished: () => false,
   hasFallen,
+  supportHeightAt,
 })
 
 const makeSim = (position: Vec3, velocity: Vec3 = vec3(0, 0, 0), grounded = true): RunnerSim => ({
@@ -240,8 +244,11 @@ describe("npcInput jumping", () => {
     const npc = makeNpc()
     const sim = makeSim(vec3(0, 0, 0))
     const course = makeCourse([vec3(0, 0, 50)])
-    // Gap in the floor: anything below y=-0.5 past z=2 is missing ground.
-    const world = makeWorld((position) => position.y < -0.5 && position.z > 2)
+    // Gap in the floor: no support past z = 0.5, so the look-ahead probe finds none.
+    const world = makeWorld(
+      () => false,
+      (_x, z) => (z > 0.4 ? null : 0),
+    )
     let fired = false
     for (let tick = 0; tick < 30 && !fired; tick++) {
       const input = npcInput(npc, sim, course, world, tick * STEP)
@@ -419,7 +426,10 @@ describe("determinism", () => {
       vec3(-4, 0, 28),
       vec3(0, 0, 34),
     ])
-    const world = makeWorld((position) => position.y < -0.5 && position.z > 10 && position.z < 25)
+    const world = makeWorld(
+      () => false,
+      (_x, z) => (z > 10 && z < 25 ? null : 0),
+    )
 
     const runOnce = (): string => {
       const racers = createNpcRacers(course, 99, 3)

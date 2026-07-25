@@ -60,6 +60,9 @@ const makeStubWorld = (options: StubWorldOptions = {}): WorldSnapshot => {
     hasFallen(position: Vec3): boolean {
       return position.y < killY
     },
+    supportHeightAt(): number | null {
+      return 0
+    },
   }
 }
 

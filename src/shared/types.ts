@@ -260,4 +260,10 @@ export type WorldSnapshot = {
   isFinished(position: Vec3, radius: number): boolean
   /** True when the runner has fallen below the course kill plane. */
   hasFallen(position: Vec3): boolean
+  /**
+   * Height of the highest walkable surface at (x, z) that sits at or below
+   * `fromY`, or null when nothing supports that column. Used to look ahead for
+   * gaps — `hasFallen` only answers "already fell", never "about to".
+   */
+  supportHeightAt(x: number, z: number, fromY: number): number | null
 }

@@ -32,6 +32,34 @@ type MoverEntry = { readonly spec: MoverSpec; readonly box: BoxCollider }
 type SweeperEntry = { readonly spec: SweeperSpec; readonly arm: BoxCollider }
 type BumperEntry = { readonly spec: BumperSpec; readonly sphere: SphereCollider }
 
+/** True when the (x, z) column lies inside a yaw-rotated box footprint. */
+function containsColumn(box: BoxCollider, x: number, z: number): boolean {
+  const dx = x - box.center.x
+  const dz = z - box.center.z
+  const cos = Math.cos(-box.yaw)
+  const sin = Math.sin(-box.yaw)
+  const localX = dx * cos - dz * sin
+  const localZ = dx * sin + dz * cos
+  return Math.abs(localX) <= box.halfExtents.x && Math.abs(localZ) <= box.halfExtents.z
+}
+
+/** Highest deck top at or below `fromY` under the (x, z) column. */
+function highestSupport(
+  boxes: readonly BoxCollider[],
+  x: number,
+  z: number,
+  fromY: number,
+): number | null {
+  let best: number | null = null
+  for (const box of boxes) {
+    if (!containsColumn(box, x, z)) continue
+    const top = box.center.y + box.halfExtents.y
+    if (top > fromY) continue
+    if (best === null || top > best) best = top
+  }
+  return best
+}
+
 export function createWorldSnapshot(course: CourseDefinition, timeSec: number): WorldSnapshot {
   const platformBoxes: readonly BoxCollider[] = course.platforms.map((p) => p.box)
   const movers: MoverEntry[] = []
@@ -182,5 +210,8 @@ export function createWorldSnapshot(course: CourseDefinition, timeSec: number): 
 
   const hasFallen = (position: Vec3): boolean => position.y < course.killY
 
-  return { timeSec, resolve, checkpointAt, isFinished, hasFallen }
+  const supportHeightAt = (x: number, z: number, fromY: number): number | null =>
+    highestSupport([...platformBoxes, ...movers.map((entry) => entry.box)], x, z, fromY)
+
+  return { timeSec, resolve, checkpointAt, isFinished, hasFallen, supportHeightAt }
 }
