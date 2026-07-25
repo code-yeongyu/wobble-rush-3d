@@ -58,9 +58,9 @@ export const RUNNER = {
 
 export const CAMERA = {
   /** Distance behind the runner, m. */
-  distance: 8.6,
+  distance: 7.4,
   /** Height above the runner, m. */
-  height: 4.2,
+  height: 3.5,
   /** Position smoothing half-life, s (lower = snappier). */
   positionHalfLife: 0.12,
   /** Look-at smoothing half-life, s. */
