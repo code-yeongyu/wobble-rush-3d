@@ -6,7 +6,13 @@
 
 import { NET } from "./constants"
 import { withCompletion } from "./room-completion"
-import { errorMessage, phaseMessage, rosterMessage, statesMessage } from "./room-messages"
+import {
+  errorMessage,
+  phaseMessage,
+  rosterMessage,
+  singleStateMessage,
+  statesMessage,
+} from "./room-messages"
 import type { Reduction, RoomAction, RoomEffect, RoomState } from "./room-types"
 import { assertNever } from "./types"
 
@@ -39,12 +45,15 @@ export function reduceStateUpdate(
       p.id === action.id ? { ...p, state: s, lastSeenMs: nowMs } : p,
     ),
   }
-  return { state: next, effects: [] }
+  // Relay immediately. Waiting for the alarm tick capped remote runners at the
+  // alarm's one-second cadence, however fast clients actually sent.
+  return { state: next, effects: [{ kind: "broadcast", message: singleStateMessage(s, nowMs) }] }
 }
 
 export function reduceFinish(
   state: RoomState,
   action: Extract<RoomAction, { kind: "finish" }>,
+  nowMs: number,
 ): Reduction {
   if (state.phase !== "racing") {
     return { state, effects: [] }
@@ -65,17 +74,28 @@ export function reduceFinish(
       ],
     }
   }
+  // A finisher stops sending state, so its lastSeenMs must be refreshed here or
+  // the idle sweep would evict it while it waits for the rest of the pack.
   const next: RoomState = {
     ...state,
     players: state.players.map((p) =>
-      p.id === action.id ? { ...p, finishedMs: action.timeMs } : p,
+      p.id === action.id ? { ...p, finishedMs: action.timeMs, lastSeenMs: nowMs } : p,
     ),
   }
   return withCompletion(next, [])
 }
 
-export function reduceRestart(state: RoomState, nowMs: number): Reduction {
+export function reduceRestart(
+  state: RoomState,
+  action: Extract<RoomAction, { kind: "restart" }>,
+  nowMs: number,
+): Reduction {
   if (state.phase !== "finished") {
+    return { state, effects: [] }
+  }
+  // Only a racer in this room may reopen it — an unjoined socket must not be
+  // able to wipe someone else's results.
+  if (!state.players.some((p) => p.id === action.id)) {
     return { state, effects: [] }
   }
   const next: RoomState = {
@@ -106,7 +126,9 @@ export function reduceTick(state: RoomState, nowMs: number): Reduction {
     }
     case "racing": {
       const timeoutMs = NET.timeoutSec * 1000
-      const stale = state.players.filter((p) => nowMs - p.lastSeenMs > timeoutMs)
+      const stale = state.players.filter(
+        (p) => p.finishedMs === null && nowMs - p.lastSeenMs > timeoutMs,
+      )
       const effects: RoomEffect[] = []
       let next = state
       if (stale.length > 0) {

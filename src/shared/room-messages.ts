@@ -32,6 +32,11 @@ export function statesMessage(state: RoomState, nowMs: number): ServerMessage {
   return { type: "states", serverNowMs: nowMs, players }
 }
 
+/** Relay for exactly one runner, so a 15 Hz update costs one small frame. */
+export function singleStateMessage(runner: RemoteRunnerState, nowMs: number): ServerMessage {
+  return { type: "states", serverNowMs: nowMs, players: [runner] }
+}
+
 export function buildResults(players: readonly RoomPlayer[]): readonly RaceResult[] {
   const sorted = [...players].sort((a, b) => {
     if (a.finishedMs === null) return b.finishedMs === null ? 0 : 1

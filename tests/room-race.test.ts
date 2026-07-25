@@ -26,7 +26,11 @@ describe("state updates", () => {
     const updated = player(after, P1)
     expect(updated.state).toEqual(runner(P1))
     expect(updated.lastSeenMs).toBe(now)
-    expect(effects).toEqual([])
+    // The update is relayed on arrival rather than held for the next alarm tick.
+    const relay = findBroadcast(effects, "states")
+    expect(relay).not.toBeNull()
+    if (relay === null || relay.type !== "states") throw new Error("expected a states relay")
+    expect(relay.players).toEqual([runner(P1)])
   })
 
   test("rejects a non-finite component with an error effect and keeps the old state", () => {

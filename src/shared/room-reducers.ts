@@ -30,9 +30,9 @@ export function reduceRoom(state: RoomState, action: RoomAction, nowMs: number):
     case "state":
       return reduceStateUpdate(state, action, nowMs)
     case "finish":
-      return reduceFinish(state, action)
+      return reduceFinish(state, action, nowMs)
     case "restart":
-      return reduceRestart(state, nowMs)
+      return reduceRestart(state, action, nowMs)
     case "tick":
       return reduceTick(state, nowMs)
     default:

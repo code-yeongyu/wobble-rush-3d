@@ -15,6 +15,14 @@ export type RoomCode = Brand<string, "RoomCode">
 export type ObstacleId = Brand<string, "ObstacleId">
 export type CheckpointIndex = Brand<number, "CheckpointIndex">
 
+/**
+ * Brand constructors.
+ *
+ * These four functions are the ONLY place a type assertion is allowed in this
+ * codebase: a nominal type cannot be produced without one, and confining the
+ * assertion here is exactly what buys nominal safety everywhere else. Every
+ * other module must go through these instead of casting.
+ */
 export const asPlayerId = (value: string): PlayerId => value as PlayerId
 export const asRoomCode = (value: string): RoomCode => value as RoomCode
 export const asObstacleId = (value: string): ObstacleId => value as ObstacleId

@@ -37,6 +37,16 @@ export function reduceJoin(
   if (state.players.some((p) => p.id === action.id)) {
     return { state, effects: [] }
   }
+  // A latecomer would never finish, and room completion waits for everyone —
+  // so an in-progress room is closed rather than silently wedged.
+  if (state.phase !== "lobby") {
+    return rejectJoin(
+      state,
+      action.id,
+      "race_in_progress",
+      "That race has already started — try again when it finishes",
+    )
+  }
   if (state.players.length >= NET.maxPlayersPerRoom) {
     return rejectJoin(
       state,
