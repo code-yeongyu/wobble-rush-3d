@@ -173,7 +173,11 @@ export function stepRunner(
     events.push({ kind: "dive", position: snapshotOf(sim.position) })
   }
 
-  // Camera-relative steering: forward/strafe rotated by the camera yaw.
+  // Camera-relative steering.
+  //
+  // The camera looks along F = (sin yaw, 0, cos yaw), so the direction the player
+  // sees as right is R = F x up = (-cos yaw, 0, sin yaw). Steering strafe along
+  // +R is what makes D move right on screen; the mirrored basis sends it left.
   const magnitude = Math.hypot(controls.forward, controls.strafe)
   if (magnitude > 0) {
     const inputScale = magnitude > 1 ? 1 / magnitude : 1
@@ -181,8 +185,8 @@ export function stepRunner(
     const strafe = controls.strafe * inputScale
     const sin = Math.sin(controls.cameraYaw)
     const cos = Math.cos(controls.cameraYaw)
-    const wishX = sin * forward + cos * strafe
-    const wishZ = cos * forward - sin * strafe
+    const wishX = sin * forward - cos * strafe
+    const wishZ = cos * forward + sin * strafe
     const diving = sim.diveTimer > 0
     const accel = diving
       ? RUNNER.airAccel * DIVE_STEER_FACTOR

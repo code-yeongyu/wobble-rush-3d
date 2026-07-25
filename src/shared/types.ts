@@ -174,7 +174,11 @@ export type CourseDefinition = {
 export type PlayerInput = {
   /** -1 back .. +1 forward, already clamped. */
   readonly forward: number
-  /** -1 left .. +1 right, already clamped. */
+  /**
+   * -1 left .. +1 right, already clamped. Positive is the CAMERA'S right-hand
+   * side — what the player sees as right when pressing D — which for a camera
+   * looking along (sin yaw, 0, cos yaw) is the axis (-cos yaw, 0, sin yaw).
+   */
   readonly strafe: number
   /** True while the jump key is held (enables variable jump height). */
   readonly jumpHeld: boolean

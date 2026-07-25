@@ -168,8 +168,11 @@ export function npcInput(
   const dirX = dist > 1e-6 ? dx / dist : 0
   const dirZ = dist > 1e-6 ? dz / dist : 0
 
+  // NPCs steer in world space with cameraYaw fixed at 0, where the right-hand
+  // axis is -X. Negating dirX expresses the world direction in the same
+  // camera-relative strafe channel a human's D key uses.
   let forward = dirZ * npc.skill
-  let strafe = dirX * npc.skill
+  let strafe = -dirX * npc.skill
   strafe += Math.sin(timeSec * 2 * Math.PI * NPC.wobbleHz + npc.wobblePhase) * NPC.wobbleAmplitude
 
   // Jump: rising-edge only, gated by the reaction-delay state machine.
