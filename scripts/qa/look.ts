@@ -16,7 +16,11 @@ await page.waitForTimeout(1200)
 await page.screenshot({ path: "evidence/look-countdown.png" })
 await page.waitForTimeout(2600)
 await page.screenshot({ path: "evidence/look-race-begin.png" })
-await page.evaluate(() => (globalThis as any).wobble.autopilot(true))
+await page.evaluate(() => {
+  const api = (globalThis as unknown as { wobble?: { autopilot(value: boolean): void } }).wobble
+  if (api === undefined) throw new Error("window.wobble debug API is unavailable")
+  api.autopilot(true)
+})
 await page.waitForTimeout(6000)
 await page.screenshot({ path: "evidence/look-sweepers.png" })
 await page.waitForTimeout(9000)

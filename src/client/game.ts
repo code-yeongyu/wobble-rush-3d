@@ -3,13 +3,13 @@
  *
  * The simulation is the same pure code the unit tests exercise: `stepRunner` against a
  * `WorldSnapshot` built from the course. Rendering only ever reads simulation state.
+ * The race lifecycle (solo/party starts, restarts, phase reactions) lives in
+ * `race-director.ts`; this class is construction, wiring, the fixed-step pump
+ * and rendering.
  */
 
-import { NET } from "../shared/constants"
 import { RUNNER_COLORS, SUNRISE_SCRAMBLE } from "../shared/course"
-import type { RaceResult, RoomPhase } from "../shared/room"
-import type { CheckpointIndex, PlayerId } from "../shared/types"
-import { assertNever } from "../shared/types"
+import type { PlayerId } from "../shared/types"
 import { createWorldSnapshot } from "../shared/world"
 import { AudioKit } from "./audio"
 import { CameraRig } from "./camera-rig"
@@ -24,6 +24,7 @@ import { PartyLink } from "./party-link"
 import type { PartyPorts } from "./party-wiring"
 import { partyEvents } from "./party-wiring"
 import { RaceClock } from "./race-clock"
+import { RaceDirector } from "./race-director"
 import type { FeedbackPorts } from "./race-feedback"
 import { applyEvents } from "./race-feedback"
 import { localFinisherId, placementLabel, rankFinishers, recordBest } from "./race-results"
@@ -32,10 +33,7 @@ import type { SceneKit } from "./scene-kit"
 import { createSceneKit } from "./scene-kit"
 import { Ui } from "./ui"
 
-const SOLO_NPC_COUNT = 4
 const PARTY_NPC_COUNT = 2
-
-type GameMode = "solo" | "party"
 
 export class Game {
   private readonly ui: Ui
@@ -51,31 +49,29 @@ export class Game {
   private readonly party: PartyLink
   private readonly clock = new RaceClock()
   private readonly runner: LocalRunner
+  private readonly director: RaceDirector
   private readonly loop: FrameLoop
   private readonly reducedMotion: boolean
 
   private selfId: PlayerId | null = null
-  private selfName = "Wobbler"
-  private colorIndex = 0
-  private mode: GameMode = "solo"
   private roomCode: string | null = null
-  private results: readonly RaceResult[] = []
   private simTime = 0
   private orbitYaw = 0
 
   constructor(root: HTMLElement) {
     this.reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches
     this.ui = new Ui(root, {
-      onPlaySolo: (name, colorIndex) => this.startSolo(name, colorIndex),
-      onPlayOnline: (name, colorIndex, code) => void this.startParty(name, colorIndex, code),
+      onPlaySolo: (name, colorIndex) => this.director.startSolo(name, colorIndex),
+      onPlayOnline: (name, colorIndex, code) =>
+        void this.director.startParty(name, colorIndex, code),
       onReady: (ready) => this.party.send({ type: "ready", ready }),
       onLeaveLobby: () => {
         this.party.leave()
         this.remotes.clear()
-        this.backToMenu()
+        this.director.backToMenu()
       },
-      onRestart: () => this.restart(),
-      onBackToMenu: () => this.backToMenu(),
+      onRestart: () => this.director.restart(),
+      onBackToMenu: () => this.director.backToMenu(),
       onToggleSound: (muted) => this.audio.setMuted(muted),
     })
 
@@ -86,6 +82,20 @@ export class Game {
     this.npcs = new NpcPack(this.kit.scene, this.course)
     this.party = new PartyLink(partyEvents(this.partyPorts()))
     this.runner = new LocalRunner(this.kit.scene, this.course, RUNNER_COLORS[0] ?? "#FF7A5C")
+    this.director = new RaceDirector({
+      ui: this.ui,
+      audio: this.audio,
+      clock: this.clock,
+      camera: this.camera,
+      runner: this.runner,
+      remotes: this.remotes,
+      npcs: this.npcs,
+      party: this.party,
+      course: this.course,
+      onRunnersReset: () => {
+        this.orbitYaw = this.course.spawnYaw
+      },
+    })
     this.kit.scene.add(this.courseView.group, this.effects.group)
 
     globalThis.addEventListener("resize", () => this.kit.resize())
@@ -119,7 +129,8 @@ export class Game {
       audio: this.audio,
       ui: this.ui,
       camera: this.camera,
-      runnerColor: RUNNER_COLORS[this.colorIndex % RUNNER_COLORS.length] ?? "#FF7A5C",
+      runnerColor:
+        RUNNER_COLORS[this.director.currentColorIndex % RUNNER_COLORS.length] ?? "#FF7A5C",
       checkpointTotal: this.course.checkpoints.length - 1,
     }
   }
@@ -129,18 +140,18 @@ export class Game {
       identify: (you, snapshot, seed) => {
         this.selfId = you
         this.roomCode = snapshot.code
-        this.ui.setRoom(snapshot, this.selfName)
+        this.ui.setRoom(snapshot, this.director.playerName)
         this.npcs.spawn(seed, PARTY_NPC_COUNT)
       },
       roster: (snapshot) => {
         this.roomCode = snapshot.code
-        this.ui.setRoom(snapshot, this.selfName)
+        this.ui.setRoom(snapshot, this.director.playerName)
         this.remotes.sync(snapshot, this.selfId)
       },
-      phase: (phase, endsAtMs, serverNowMs) => this.onPhase(phase, endsAtMs, serverNowMs),
+      phase: (phase, endsAtMs, serverNowMs) => this.director.onPhase(phase, endsAtMs, serverNowMs),
       states: (players) => this.remotes.push(players, this.selfId, performance.now()),
       results: (results) => {
-        this.results = results
+        this.director.setResults(results)
         if (this.clock.phase === "finished") this.showFinishScreen()
       },
       failure: (message) => this.ui.showError(message),
@@ -152,102 +163,11 @@ export class Game {
     }
   }
 
-  private startSolo(name: string, colorIndex: number): void {
-    this.audio.unlock()
-    this.audio.play("click")
-    this.mode = "solo"
-    this.selfName = name
-    this.applyColor(colorIndex)
-    this.remotes.clear()
-    this.npcs.spawn(Math.floor(Math.random() * 1_000_000), SOLO_NPC_COUNT)
-    this.beginRace()
-  }
-
-  private async startParty(name: string, colorIndex: number, code: string | null): Promise<void> {
-    this.audio.unlock()
-    this.audio.play("click")
-    this.mode = "party"
-    this.selfName = name
-    this.applyColor(colorIndex)
-    this.remotes.clear()
-    await this.party.join(code, { type: "join", name, mode: "party", colorIndex })
-    if (this.party.active) this.ui.show("lobby")
-  }
-
-  private backToMenu(): void {
-    this.clock.idle()
-    this.audio.stopMusic()
-    this.resetRunners()
-    this.ui.show("start")
-  }
-
-  private restart(): void {
-    if (this.mode === "party" && this.party.active) {
-      this.party.send({ type: "restart" })
-      this.ui.resetReadyButton()
-      this.ui.show("lobby")
-      return
-    }
-    this.npcs.spawn(Math.floor(Math.random() * 1_000_000), SOLO_NPC_COUNT)
-    this.beginRace()
-  }
-
-  private beginRace(): void {
-    this.resetRunners()
-    this.results = []
-    this.clock.beginCountdown(NET.countdownSec)
-    this.ui.show("hud")
-    this.ui.setTimer(0)
-    this.ui.setCheckpoints(0, this.course.checkpoints.length - 1)
-    this.ui.setPlace("")
-    this.camera.snapTo(this.course.spawn, this.course.spawnYaw)
-    this.audio.startMusic()
-  }
-
-  private resetRunners(): void {
-    const start = this.course.checkpoints[0]?.index ?? (0 as CheckpointIndex)
-    this.runner.reset(start)
-    this.npcs.reset(start)
-    this.orbitYaw = this.course.spawnYaw
-  }
-
-  private applyColor(colorIndex: number): void {
-    this.colorIndex = colorIndex
-    this.runner.setColor(RUNNER_COLORS[colorIndex % RUNNER_COLORS.length] ?? "#FF7A5C")
-  }
-
-  private onPhase(phase: RoomPhase, endsAtMs: number | null, serverNowMs: number): void {
-    switch (phase) {
-      case "lobby":
-        this.clock.idle()
-        this.ui.resetReadyButton()
-        this.ui.show("lobby")
-        break
-      case "countdown":
-        this.resetRunners()
-        this.clock.beginCountdown(
-          endsAtMs === null ? NET.countdownSec : Math.max(0, (endsAtMs - serverNowMs) / 1000),
-        )
-        this.ui.show("hud")
-        this.audio.startMusic()
-        break
-      case "racing":
-        this.clock.startRacing()
-        this.ui.setCountdown(null)
-        break
-      case "finished":
-        break
-      default:
-        assertNever(phase, "onPhase")
-    }
-    this.ui.setPhaseHint(phase)
-  }
-
   private stepSimulation(dt: number): void {
     this.simTime += dt
     const world = createWorldSnapshot(this.course, this.simTime)
 
-    const tick = this.clock.tick(dt, this.mode === "solo")
+    const tick = this.clock.tick(dt, this.director.currentMode === "solo")
     if (this.clock.phase === "countdown" || tick.started) this.ui.setCountdown(tick.label)
     if (tick.started) {
       this.audio.play("go")
@@ -283,16 +203,20 @@ export class Game {
     this.audio.play("finish")
     this.audio.stopMusic()
     this.party.send({ type: "finish", timeMs: Math.round(this.clock.raceMs) })
-    if (this.mode === "solo") this.showFinishScreen()
+    if (this.director.currentMode === "solo") this.showFinishScreen()
   }
 
   private showFinishScreen(): void {
     const best = recordBest(this.clock.raceMs, globalThis.localStorage)
     const results =
-      this.results.length > 0
-        ? this.results
+      this.director.raceResults.length > 0
+        ? this.director.raceResults
         : rankFinishers([
-            { id: localFinisherId(0), name: this.selfName, timeMs: Math.round(this.clock.raceMs) },
+            {
+              id: localFinisherId(0),
+              name: this.director.playerName,
+              timeMs: Math.round(this.clock.raceMs),
+            },
             ...this.npcs.finishers(1),
           ])
     this.ui.showFinish(this.clock.raceMs, best.note, results)
@@ -317,7 +241,7 @@ export class Game {
         placementLabel(sim.position.z, [...this.npcs.progress(), ...this.remotes.progress()]),
       )
     }
-    if (this.mode === "party" && this.clock.phase === "racing") {
+    if (this.director.currentMode === "party" && this.clock.phase === "racing") {
       this.party.sendState(nowMs, {
         type: "state",
         p: [sim.position.x, sim.position.y, sim.position.z],
