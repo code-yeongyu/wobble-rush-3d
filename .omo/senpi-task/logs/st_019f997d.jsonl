@@ -1,0 +1,54 @@
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"running","residency_state":"resident"}}
+{"type":"assistant_message","payload":{"text":"I read this as a [Comprehensive research] request - produce a 6-section markdown report on Three.js r180+ arcade platformer techniques with verified URLs. Plan: fetch three.js repo metadata + HEAD SHA, then in parallel pull official docs for the key classes (MeshPhysicalMaterial, PMREMGenerator, RoomEnvironment, InstancedMesh, Points), examples for camera/controller/particles, and corroborate game-feel values from GDC/open-source sources. Verify URLs are actually fetched.\n\nLet me start by resolving the canonical three.js repository and current HEAD SHA, plus fetching the key official docs pages in parallel."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"HEAD SHA resolved: `1bc25777ac82579be2137f1f2e3f7d649595405f` (2026-07-25), default branch `dev`. The docs index confirms all target classes exist (MeshPhysicalMaterial, PMREMGenerator, RoomEnvironment, InstancedMesh, Points, RoundedBoxGeometry, Octree, Capsule). Now I'll fetch the actual doc/source content at that SHA in parallel: key markdown docs, the canonical kinematic character-controller example (games/fps using Octree+Capsule), and addon sources."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"raw URLs returned 404 - let me verify the actual path structure via the GitHub contents API for the dev branch HEAD."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":true}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":true}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":true}}
+{"type":"assistant_message","payload":{"text":"Let me retry with explicit `ref=dev` and verify the branch/SHA mapping."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":true}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"The `examples/` dir now lists example HTML files flat (e.g. `games_fps.html`, not `games/fps.html`). The docs path 404'd though - let me locate the actual docs location and fetch the key example HTML + addon structure in parallel."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Got the canonical kinematic controller (`games_fps.html`): Octree+Capsule, substep loop (`STEPS_PER_FRAME=5`, `min(0.05, delta)/STEPS_PER_FRAME`), slope test `result.normal.y >= 0.15`, damping `Math.exp(-4*dt)-1`, air control (`25 : 8`), jump `y=15`, plus VSMShadow + ACES setup. The `docs/` dir no longer ships markdown (now `pages/` built HTML + `llms.txt`). Let me verify the SHA raw path works (for immutable permalinks) and pull the addon sources + live doc pages in parallel."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"The SHA raw path works for addon/`.js` sources (Octree, Capsule, RoundedBoxGeometry, RoomEnvironment all fetched at `1bc2577…`). The live `threejs.org/docs/api/...` URLs now JS-redirect to hash routing (no content via curl). I still need: doc TEXT for MeshPhysicalMaterial/WebGLRenderer/InstancedMesh/Points/PMREMGenerator, the `damp` definition, example sources for points+instancing, and external game-feel references. Let me fire a parallel wave: test the `pages/` doc path, pull MathUtils + InstancedMesh source, two example sources, and gh code-search for open-source coyote/jump-buffer implementations."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Strong material now: MeshPhysicalMaterial doc (clearcoat/sheen/ior defaults & ranges), `MathUtils.damp = lerp(x,y,1-exp(-λdt))` with a citable Rory Driscoll link, plus open-source coyote/jump-buffer repos (B0N3head: coyote=0.2s; TerryCavanagh/triangle-run: coyotetime+jumpqueued). Now fetching in parallel: WebGLRenderer + InstancedMesh + Points + PMREMGenerator doc pages, the B0N3head controller source, the Rory Driscoll article, and the points + instancing example sources."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":true}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"The Rory Driscoll fetch was rejected because the broker only accepts HTTPS (I used `http://`). Also I noticed the WebGLRenderer `shadowMap.type` doc enum now lists only Basic/PCF/VSM (not PCFSoft), yet the docs index still lists `PCFSoftShadowMap` as a global — I must verify PCFSoft's current status to avoid citing a deprecated API. Firing a parallel wave: HTTPS Rory Driscoll article, the constants source, a code search for `MathUtils.damp` camera usage in three.js, and the clearcoat example."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Key finding verified: `PCFSoftShadowMap` is **removed/deprecated** in this build — `WebGLShadowMap.js` explicitly warns `PCFSoftShadowMap has been removed. Using PCFShadowMap instead.` and falls back. I'll flag this clearly. Also confirmed: clearcoat example idiom, Rory Driscoll's damping article (full text), and `MathUtils.damp` unit test. One last fetch to verify `OrbitControls` damping constants for the camera section, then I'll write the report."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}

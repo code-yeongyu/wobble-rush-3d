@@ -1,0 +1,19 @@
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"running","residency_state":"resident"}}
+{"type":"assistant_message","payload":{"text":"I read this as implementing `src/shared/npc/ai.ts` to pass `tests/npc.test.ts` - read the course/types/rng/test files first, then build and verify."}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Read complete. Now let me check the tsconfig and locate the `programming` skill the task mentions."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Skill loaded (strict TS iron list noted). Now writing the deliverable."}}
+{"type":"tool_execution","payload":{"tool":"write","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"All 4 tests pass. Now the type check."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"`tsc` reports zero errors in `src/shared/npc/ai.ts` — the only diagnostics are pre-existing ones in `src/server/index.ts` (untouched, per instructions).\n\n**Result: GREEN.**\n\n- `bun test tests/npc.test.ts`: **4 pass, 0 fail** (5 expect calls)\n- `bunx tsc --noEmit -p tsconfig.json`: clean for my file; pre-existing server errors ignored\n\n**Files created:** `src/shared/npc/ai.ts` (only)\n\nDesign notes:\n- `buildNpcWaypoints` derives 8 waypoints from course data, z-descending: start pad `(0, 0.55, 0)` -> sweeper arena `(0, 0.55, -30)` -> both moving platforms `(0, 0.45, -46/-52)` -> bumper platform `(0, 0.55, -62)` -> narrow bridge `(0, 0.45, -76)` -> elevated ramp `(0, 1.95, -92)` -> finish `(0, 4, -104)`. Platforms qualify as \"key\" by hosting a hazard/checkpoint/finish, containing the spawn, being elevated, or being narrow; the finish pedestal is deduped against the finish zone sitting on it.\n- `decideNpcInput` advances locally past reached waypoints (`ARRIVE_DIST` 1.5), always sets `forward` while progressing toward -z, steers `left`/`right` by lateral offset, and jumps when grounded with either a drop-down target or a ground-probe miss 2 units ahead (catches the z=-40..-52 moving-platform gap). It's a pure function of its inputs — no `Date`/`Math.random`, rng reserved for future deterministic jitter — so test 4's deep-equal determinism holds by construction."}}
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"completed","residency_state":"resident"}}
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"completed","residency_state":"disposed"}}
+{"type":"destroyed","payload":{"cause":"shutdown"}}

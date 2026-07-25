@@ -1,0 +1,31 @@
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"running","residency_state":"resident"}}
+{"type":"assistant_message","payload":{"text":"I read this as implementation - build `src/shared/obstacles/kinematics.ts` and `collision.ts` so `tests/obstacles.test.ts` passes GREEN, then verify with tsc.\n\nReading the required context first: the programming skill, course definitions, types, and the test file."}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Context loaded. Checking for the `programming` skill the task references:"}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"read","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Empty `obstacles/` dir — building both modules fresh. Checking for an existing `assertNever` helper to reuse before writing one:"}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"House style confirmed (local `assertNever` pattern). Writing both modules now — reusing `PHYS.PLAYER_RADIUS`, `clamp`, `sub`, `len`, `aabb`, `vec3` from existing shared code:"}}
+{"type":"tool_execution","payload":{"tool":"write","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"write","is_error":false}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"All tests green. Typecheck:"}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"TS5097 (`.ts` extension) hits every file project-wide, including read-only `course.ts` — the tsconfig predates the mandated extension style, and I can't touch config. Filtering those out to confirm my files are otherwise clean:"}}
+{"type":"tool_execution","payload":{"tool":"bash","is_error":false}}
+{"type":"assistant_message","payload":{"text":"Task complete — `tests/obstacles.test.ts` fully GREEN.\n\n**Verification**\n- `bun test tests/obstacles.test.ts`: **5 pass / 0 fail** (205 expect() calls). Note: the file contains 5 tests, not the 6 estimated in the brief — all of them pass.\n- `bunx tsc --noEmit -p tsconfig.json`: **zero errors in `src/shared/obstacles/*` other than TS5097** (`.ts` import extensions), which is pre-existing and project-wide — the untouched, read-only `src/shared/course.ts` and every other file in the repo hit the identical error because the scaffold tsconfig lacks `allowImportingTsExtensions`. The brief itself mandates `.ts` extensions, and config edits were out of scope. With the flag enabled (diagnostic only), my files typecheck with zero findings.\n- No edits to `tests/`, `course.ts`, or any file outside `src/shared/obstacles/`.\n\n**Files created**\n- `src/shared/obstacles/kinematics.ts` — `sweeperAngleAt` (t * speed), `sweeperHit` (XZ closest-point-on-segment vs `thickness + PHYS.PLAYER_RADIUS`, vertical gate with +1 headroom, knockback along bar-material velocity `u·ω·(−sin,0,cos)` + up, |knock| ≈ 10.3), `movingPlatformOffset` (floor-mod triangle wave, constant |speed|, bounded to ±offset), `bumperBounce` (normalized away-vector × 10 + 4 up, degenerate-center guard).\n- `src/shared/obstacles/collision.ts` — `GroundPlane` type + `groundPlatformsAt` (static platforms + moving platforms displaced along their axis via `movingPlatformOffset`; exhaustive switch over `CourseElement` with `assertNever`).\n\nBoth modules are pure, deterministic, time-driven, and reuse existing shared helpers (`vec3/clamp/sub/len/aabb`, `PHYS.PLAYER_RADIUS`) per the programming skill's TS reference: readonly types, no `any`, no enum, `import type`, named exports, `.ts` extensions."}}
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"completed","residency_state":"resident"}}
+{"type":"transition_applied","payload":{"type":"transition_applied","status":"completed","residency_state":"disposed"}}
+{"type":"destroyed","payload":{"cause":"shutdown"}}

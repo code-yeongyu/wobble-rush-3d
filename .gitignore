@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+evidence/**/*.webm
+evidence/**/*.zip
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+test-results/
+playwright-report/
