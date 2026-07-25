@@ -7,9 +7,18 @@
 import { mkdir, readdir, rename } from "node:fs/promises"
 import type { Browser, BrowserContext, Page } from "@playwright/test"
 
+/** Per-frame extremes recorded in-page so assertions never depend on sample timing. */
+export type Peaks = {
+  maxY: number
+  maxZ: number
+  startY: number
+  startZ: number
+}
+
 declare global {
   /** Injected by the game at boot; see src/client/debug-api.ts. */
   var wobble: { state(): WobbleState; autopilot(value: boolean): void } | undefined
+  var __wobblePeaks: Peaks | undefined
 }
 
 export type WobbleState = {
@@ -119,6 +128,37 @@ export function createDriver(options: DriverOptions) {
     await page.keyboard.up("KeyW")
   }
 
+  /**
+   * Records the runner's peak height and furthest progress from inside the page,
+   * on every animation frame. Sampling from the test side between drive chunks
+   * makes the assertion depend on when the sample happens to land, which is
+   * exactly the timing luck a jump-arc assertion must not rely on.
+   */
+  const trackPeaks = (page: Page): Promise<void> =>
+    page.evaluate(() => {
+      const api = globalThis.wobble
+      if (api === undefined) throw new Error("window.wobble debug API is unavailable")
+      const start = api.state().position
+      const peaks = { maxY: start.y, maxZ: start.z, startY: start.y, startZ: start.z }
+      globalThis.__wobblePeaks = peaks
+      const sample = (): void => {
+        const current = globalThis.wobble?.state().position
+        if (current !== undefined) {
+          peaks.maxY = Math.max(peaks.maxY, current.y)
+          peaks.maxZ = Math.max(peaks.maxZ, current.z)
+        }
+        requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+    })
+
+  const readPeaks = (page: Page): Promise<Peaks> =>
+    page.evaluate(() => {
+      const peaks = globalThis.__wobblePeaks
+      if (peaks === undefined) throw new Error("peak tracking was never started")
+      return peaks
+    })
+
   const setAutopilot = (page: Page, on: boolean): Promise<void> =>
     page.evaluate((enabled) => {
       const api = globalThis.wobble
@@ -145,6 +185,8 @@ export function createDriver(options: DriverOptions) {
     waitFor,
     openGame,
     humanDrive,
+    trackPeaks,
+    readPeaks,
     setAutopilot,
     finishVideo,
   }

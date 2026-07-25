@@ -65,7 +65,16 @@ export class CourseView {
       buildCheckpointFlags(
         course.checkpoints
           .filter((checkpoint) => checkpoint.index !== 0)
-          .map((checkpoint) => ({ x: checkpoint.respawn.x, z: checkpoint.respawn.z })),
+          .map((checkpoint) => ({
+            x: checkpoint.respawn.x,
+            z: checkpoint.respawn.z,
+            bounds: {
+              minX: checkpoint.trigger.center.x - checkpoint.trigger.halfExtents.x,
+              maxX: checkpoint.trigger.center.x + checkpoint.trigger.halfExtents.x,
+              minZ: checkpoint.trigger.center.z - checkpoint.trigger.halfExtents.z,
+              maxZ: checkpoint.trigger.center.z + checkpoint.trigger.halfExtents.z,
+            },
+          })),
         this.tools(),
       ),
     )

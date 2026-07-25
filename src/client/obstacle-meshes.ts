@@ -129,7 +129,9 @@ export function buildMover(spec: MoverSpec, tools: MeshTools): MoverMesh {
     0.2,
     tools,
   )
-  const railRadius = Math.max(spec.halfExtents.x, spec.halfExtents.z) * 0.92
+  // Rim ring sized off the SMALL half-extent: a circle keyed to the long axis
+  // overhangs the short sides and floats past the slab's edges in mid-air.
+  const railRadius = Math.min(spec.halfExtents.x, spec.halfExtents.z) * 0.92
   const rail = new THREE.Mesh(
     tools.geometry.get(
       `rail:${railRadius}`,
