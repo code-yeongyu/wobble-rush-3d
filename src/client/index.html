@@ -3,11 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Wobble Rush 3D - a bright, toy-like browser 3D obstacle-course racer with online multiplayer." />
+    <meta name="theme-color" content="#7FA8FF" />
     <title>Wobble Rush 3D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" />
     <link rel="stylesheet" href="/assets/style.css" />
+    <script>
+      // No silent fallbacks: if the module bundle cannot load, say so loudly.
+      window.__wobbleBootFailed = (reason) => {
+        var root = document.getElementById("app") || document.body
+        root.innerHTML =
+          '<div id="boot-error" style="position:fixed;inset:0;display:grid;place-items:center;padding:32px;font:16px/1.6 system-ui,sans-serif;background:#fff2f2;color:#2a2440;text-align:center">' +
+          '<div><h1 style="margin:0 0 8px">Wobble Rush 3D failed to load</h1><p style="margin:0 0 16px">' +
+          reason +
+          '</p><button type="button" onclick="location.reload()" style="padding:12px 22px;font:inherit;font-weight:700;border:3px solid #2a2440;border-radius:14px;background:#ffd25e;cursor:pointer">Reload</button></div></div>'
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/assets/main.js"></script>
+    <noscript>
+      <p style="font: 16px system-ui; padding: 24px">Wobble Rush 3D needs JavaScript enabled to run.</p>
+    </noscript>
+    <script
+      type="module"
+      src="/assets/main.js"
+      onerror="window.__wobbleBootFailed('The game bundle (/assets/main.js) could not be downloaded.')"
+    ></script>
   </body>
 </html>

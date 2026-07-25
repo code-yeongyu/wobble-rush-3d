@@ -1,0 +1,51 @@
+.roomcode {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.roomcode strong {
+  font-size: 34px;
+  letter-spacing: 0.28em;
+  display: block;
+  color: var(--coral);
+}
+
+.players {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-m);
+  background: #fff;
+}
+
+.player--ready {
+  background: rgba(143, 232, 112, 0.35);
+}
+
+.player__dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dot);
+  border: 2px solid var(--ink);
+}
+
+.player__name {
+  flex: 1;
+  font-weight: 700;
+}
+
+.player__state {
+  font-size: 13px;
+  opacity: 0.7;
+}
