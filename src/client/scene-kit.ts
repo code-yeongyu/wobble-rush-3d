@@ -229,7 +229,9 @@ export function createSceneKit(canvas: HTMLCanvasElement): SceneKit {
 
   // QA inspection surface: automated checks read renderer.info and shadow state.
   Object.defineProperty(globalThis, "wobbleScene", {
-    value: { renderer, sun, scene, sky },
+    // camera included so rendering QA can free-look at overlap suspects
+    // (grazing angles are where coincident surfaces flicker worst).
+    value: { renderer, sun, scene, sky, camera },
     configurable: true,
   })
 
