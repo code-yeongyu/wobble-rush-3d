@@ -105,12 +105,14 @@ const obstacles: readonly (SweeperSpec | MoverSpec | BumperSpec)[] = [
     color: PALETTE.mover,
   },
   // A rideable lift that ferries you from the last island onto the checkpoint pad.
+  // It shuttles inside the 3.2 m gap with the sliders' 0.1 m clearance on each
+  // side, so its box never clips the decks it docks with.
   {
     kind: "mover",
     id: asObstacleId("ferry-1"),
-    from: { x: 5.6, y: -0.35, z: 68.4 },
-    to: { x: 7.5, y: -0.35, z: 70.6 },
-    halfExtents: { x: 2.6, y: 0.35, z: 1.9 },
+    from: { x: 5.6, y: -0.35, z: 69.4 },
+    to: { x: 7.5, y: -0.35, z: 69.4 },
+    halfExtents: { x: 2.6, y: 0.35, z: 1.5 },
     travelSec: 2,
     dwellSec: 0.9,
     phaseSec: 0,
