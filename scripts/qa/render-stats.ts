@@ -5,6 +5,20 @@
  * Usage: bun run scripts/qa/render-stats.ts [base]
  */
 import { chromium } from "@playwright/test"
+import "./driver"
+
+/** Measurement hook published by the renderer; see src/client/scene-kit.ts. */
+type RendererInfo = {
+  autoReset: boolean
+  reset(): void
+  render: { calls: number; triangles: number }
+  memory: { geometries: number; textures: number }
+  programs: readonly unknown[]
+}
+
+declare global {
+  var wobbleScene: { renderer: { info: RendererInfo } } | undefined
+}
 
 const base = Bun.argv[2] ?? "http://localhost:8787"
 const browser = await chromium.launch({
@@ -17,7 +31,7 @@ await page.waitForSelector("#play-solo")
 await page.click("#play-solo")
 await page.waitForTimeout(3800)
 await page.evaluate(() => {
-  const api = (globalThis as unknown as { wobble?: { autopilot(value: boolean): void } }).wobble
+  const api = globalThis.wobble
   if (api === undefined) throw new Error("window.wobble debug API is unavailable")
   api.autopilot(true)
 })
@@ -30,24 +44,10 @@ type Sample = {
 }
 
 const sample = (): Promise<Sample> =>
-  page.evaluate(
+  page.evaluate<Sample>(
     () =>
       new Promise((resolve) => {
-        const holder = (
-          globalThis as unknown as {
-            wobbleScene?: {
-              renderer: {
-                info: {
-                  autoReset: boolean
-                  reset(): void
-                  render: { calls: number; triangles: number }
-                  memory: { geometries: number; textures: number }
-                  programs: unknown[]
-                }
-              }
-            }
-          }
-        ).wobbleScene
+        const holder = globalThis.wobbleScene
         if (holder === undefined) throw new Error("wobbleScene hook missing")
         const info = holder.renderer.info
         info.autoReset = false
@@ -80,7 +80,7 @@ const sample = (): Promise<Sample> =>
         }
         requestAnimationFrame(tick)
       }),
-  ) as Promise<Sample>
+  )
 
 const results: Record<string, Sample> = {}
 results["race-begin"] = await sample()

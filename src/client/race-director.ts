@@ -7,8 +7,8 @@
 import { NET } from "../shared/constants"
 import { RUNNER_COLORS } from "../shared/course"
 import type { RaceResult, RoomPhase } from "../shared/room"
-import type { CheckpointIndex, CourseDefinition } from "../shared/types"
-import { assertNever } from "../shared/types"
+import type { CourseDefinition } from "../shared/types"
+import { asCheckpointIndex, assertNever } from "../shared/types"
 import type { AudioKit } from "./audio"
 import type { CameraRig } from "./camera-rig"
 import type { LocalRunner } from "./local-runner"
@@ -161,7 +161,7 @@ export class RaceDirector {
 
   private resetRunners(): void {
     const { runner, npcs, course } = this.ports
-    const start = course.checkpoints[0]?.index ?? (0 as CheckpointIndex)
+    const start = course.checkpoints[0]?.index ?? asCheckpointIndex(0)
     runner.reset(start)
     npcs.reset(start)
     this.ports.onRunnersReset()

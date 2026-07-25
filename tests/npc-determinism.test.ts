@@ -18,10 +18,13 @@ describe("determinism", () => {
       (_x, z) => (z > 10 && z < 25 ? null : 0),
     )
 
-    const runOnce = (): string => {
+    /** One sampled input: forward, strafe, held, pressed, dive, cameraYaw. */
+    type Sample = readonly [number, number, boolean, boolean, boolean, number]
+
+    const runOnce = (): readonly Sample[] => {
       const racers = createNpcRacers(course, 99, 3)
       const sims = racers.map(() => makeSim(vec3(0, 0, 0)))
-      const stream: unknown[] = []
+      const stream: Sample[] = []
       let timeSec = 0
       for (let tick = 0; tick < 600; tick++) {
         racers.forEach((npc, index) => {
@@ -52,15 +55,17 @@ describe("determinism", () => {
         })
         timeSec += STEP
       }
-      return JSON.stringify(stream)
+      return stream
     }
 
     const first = runOnce()
     const second = runOnce()
-    expect(first).toBe(second)
+    // Compare the serialised streams so a mismatch reports the differing frame,
+    // but keep the typed samples for the sanity assertions below.
+    expect(JSON.stringify(first)).toBe(JSON.stringify(second))
 
     // Sanity: the stream is not all-neutral and every value is finite and clamped.
-    const parsed = JSON.parse(first) as [number, number, boolean, boolean, boolean, number][]
+    const parsed = first
     expect(parsed.some(([forward]) => Math.abs(forward) > 0.1)).toBe(true)
     expect(parsed.some(([, , , jumpPressed]) => jumpPressed)).toBe(true)
     for (const [forward, strafe, , , , cameraYaw] of parsed) {
