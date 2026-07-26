@@ -4,8 +4,9 @@
  */
 
 import * as THREE from "three"
-import { NET } from "../shared/constants"
+import { NET, RUNNER } from "../shared/constants"
 import { RUNNER_COLORS } from "../shared/course"
+import type { CrowdBody } from "../shared/crowd"
 import type { RemoteRunnerState, RoomSnapshot } from "../shared/room"
 import type { PlayerId, RunnerSim } from "../shared/types"
 import { asCheckpointIndex } from "../shared/types"
@@ -29,6 +30,27 @@ export class RemoteRunners {
   }
 
   /** Furthest-forward Z of every remote runner, for placement display. */
+  /**
+   * Bodies for runner-vs-runner separation. Remote runners are replayed from the
+   * network, so they shove other racers but are never moved locally — moving
+   * them here would fight the authoritative stream and jitter.
+   */
+  bodies(): CrowdBody[] {
+    const out: CrowdBody[] = []
+    for (const [id, entry] of this.entries) {
+      const latest = entry.buffer.at(-1)
+      if (latest === undefined) continue
+      out.push({
+        id,
+        radius: RUNNER.radius,
+        position: { x: latest.state.p[0], y: latest.state.p[1], z: latest.state.p[2] },
+        velocity: { x: latest.state.v[0], y: latest.state.v[1], z: latest.state.v[2] },
+        movable: false,
+      })
+    }
+    return out
+  }
+
   progress(): number[] {
     return [...this.entries.values()].map(
       (entry) => entry.buffer.at(-1)?.state.p[2] ?? Number.NEGATIVE_INFINITY,
@@ -120,5 +142,9 @@ function toSim(older: RemoteRunnerState, newer: RemoteRunnerState, alpha: number
     state: newer.st,
     checkpoint: asCheckpointIndex(newer.cp),
     carry: { x: 0, y: 0, z: 0 },
+    // Contact latching is a simulation concern; a remote runner is replayed
+    // from the network, never stepped, so it never accumulates one.
+    lastContactId: null,
+    contactLockout: 0,
   }
 }

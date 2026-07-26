@@ -6,7 +6,9 @@
  */
 
 import type * as THREE from "three"
+import { RUNNER } from "../shared/constants"
 import { RUNNER_COLORS } from "../shared/course"
+import type { CrowdBody } from "../shared/crowd"
 import type { NpcRacer } from "../shared/npc"
 import { createNpcRacers, npcInput, updateNpcProgress } from "../shared/npc"
 import { createRunner, respawnRunner, stepRunner } from "../shared/player"
@@ -54,6 +56,17 @@ export class NpcPack {
 
   get size(): number {
     return this.entries.length
+  }
+
+  /** Bodies for runner-vs-runner separation; NPCs are simulated here, so movable. */
+  bodies(): CrowdBody[] {
+    return this.entries.map((entry) => ({
+      id: entry.racer.id,
+      radius: RUNNER.radius,
+      position: entry.sim.position,
+      velocity: entry.sim.velocity,
+      movable: true,
+    }))
   }
 
   progress(): number[] {

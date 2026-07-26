@@ -15,6 +15,7 @@ import { AudioKit } from "./audio"
 import { createOrbit, updateOrbit } from "./camera-math"
 import { CameraRig } from "./camera-rig"
 import { CourseView } from "./course-view"
+import { runCrowdPass } from "./crowd-pass"
 import { installDebugApi } from "./debug-api"
 import { Effects } from "./effects"
 import { FrameLoop } from "./frame-loop"
@@ -197,6 +198,8 @@ export class Game {
         applyEvents(npcEvents, this.ports, false)
       },
     )
+
+    runCrowdPass(this.runner.sim, this.npcs, this.remotes, this.ports)
   }
 
   private finishRace(): void {
