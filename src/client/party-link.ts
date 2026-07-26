@@ -7,7 +7,7 @@ import type { ClientMessage, ServerMessage } from "../shared/protocol"
 import type { RaceResult, RemoteRunnerState, RoomPhase, RoomSnapshot } from "../shared/room"
 import type { PlayerId } from "../shared/types"
 import { assertNever } from "../shared/types"
-import { createRoom, NetClient, NetworkError } from "./net"
+import { createRoom, fetchServiceStatus, NetClient, NetworkError, pauseMessage } from "./net"
 
 export type PartyEvents = {
   onWelcome(you: PlayerId, snapshot: RoomSnapshot, seed: number): void
@@ -34,6 +34,11 @@ export class PartyLink {
   /** Joins `code`, or asks the server for a fresh room when `code` is null. */
   async join(code: string | null, join: ClientMessage): Promise<void> {
     try {
+      const status = await fetchServiceStatus(fetch)
+      if (status.paused) {
+        this.events.onFailure(pauseMessage(status.resetsAt))
+        return
+      }
       const roomCode = code ?? (await createRoom())
       const client = new NetClient({
         onMessage: (message) => this.dispatch(message),
@@ -89,7 +94,11 @@ export class PartyLink {
         this.events.onResults(message.results)
         break
       case "error":
-        this.events.onFailure(`${message.code}: ${message.message}`)
+        this.events.onFailure(
+          message.code === "service_paused"
+            ? message.message
+            : `${message.code}: ${message.message}`,
+        )
         break
       default:
         assertNever(message, "PartyLink.dispatch")

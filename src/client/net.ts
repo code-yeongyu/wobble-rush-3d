@@ -98,10 +98,63 @@ export class NetClient {
   }
 }
 
+/** Human-readable notice while the budget breaker has multiplayer paused. */
+export function pauseMessage(resetsAtIso: string | null): string {
+  const day =
+    resetsAtIso !== null && !Number.isNaN(Date.parse(resetsAtIso))
+      ? resetsAtIso.slice(0, 10)
+      : "next month"
+  return `Multiplayer is paused to stay inside the hosting budget - back ${day}. Solo still works!`
+}
+
+export type ServiceStatus = { readonly paused: boolean; readonly resetsAt: string | null }
+
+const SERVICE_STATUS_OPEN: ServiceStatus = { paused: false, resetsAt: null }
+
+/**
+ * Reads GET /api/status. Fails open on any error — a status endpoint we cannot
+ * reach must never block play on its own.
+ */
+export async function fetchServiceStatus(fetcher: typeof fetch): Promise<ServiceStatus> {
+  try {
+    const response = await fetcher("/api/status")
+    if (!response.ok) return SERVICE_STATUS_OPEN
+    const payload: unknown = await response.json()
+    if (typeof payload !== "object" || payload === null) return SERVICE_STATUS_OPEN
+    if (!("paused" in payload) || typeof payload.paused !== "boolean") return SERVICE_STATUS_OPEN
+    if (!("resetsAt" in payload)) return SERVICE_STATUS_OPEN
+    const resetsAt: unknown = payload.resetsAt
+    if (resetsAt !== null && typeof resetsAt !== "string") return SERVICE_STATUS_OPEN
+    return { paused: payload.paused, resetsAt }
+  } catch {
+    return SERVICE_STATUS_OPEN
+  }
+}
+
 /** Asks the server for a fresh room code. */
-export async function createRoom(): Promise<string> {
-  const response = await fetch("/api/rooms", { method: "POST" })
-  if (!response.ok) throw new NetworkError(`room creation failed with HTTP ${response.status}`)
+export async function createRoom(fetcher: typeof fetch = fetch): Promise<string> {
+  const response = await fetcher("/api/rooms", { method: "POST" })
+  if (!response.ok) {
+    let pauseDetail: string | null = null
+    try {
+      const payload: unknown = await response.json()
+      if (typeof payload === "object" && payload !== null && "error" in payload) {
+        const body: unknown = payload.error
+        if (
+          typeof body === "object" &&
+          body !== null &&
+          "code" in body &&
+          body.code === "service_paused"
+        ) {
+          const resetsAt: unknown = "resetsAt" in body ? body.resetsAt : null
+          pauseDetail = pauseMessage(typeof resetsAt === "string" ? resetsAt : null)
+        }
+      }
+    } catch {
+      // Unreadable body — fall through to the generic HTTP error.
+    }
+    throw new NetworkError(pauseDetail ?? `room creation failed with HTTP ${response.status}`)
+  }
   const payload: unknown = await response.json()
   if (typeof payload !== "object" || payload === null || !("code" in payload)) {
     throw new NetworkError("room creation returned an unexpected payload")
