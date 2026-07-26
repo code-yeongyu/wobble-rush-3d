@@ -30,7 +30,7 @@ export const makeWorld = (
     velocity,
     grounded: true,
     carry: ZERO_VEC3,
-    events: [],
+    impulses: [],
   }),
   checkpointAt: () => null,
   isFinished: () => false,
@@ -56,6 +56,8 @@ export const makeSim = (
   state: grounded ? "run" : "air",
   checkpoint: asCheckpointIndex(0),
   carry: { x: 0, y: 0, z: 0 },
+  lastContactId: null,
+  contactLockout: 0,
 })
 
 export const makeNpc = (): NpcRacer => ({

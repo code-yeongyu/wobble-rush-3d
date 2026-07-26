@@ -33,7 +33,7 @@ const worldWithGap = (gapFrom: number, gapTo: number): WorldSnapshot => ({
     velocity,
     grounded: true,
     carry: ZERO_VEC3,
-    events: [],
+    impulses: [],
   }),
   checkpointAt: () => null,
   isFinished: () => false,
@@ -55,6 +55,8 @@ const sim = (z: number): RunnerSim => ({
   state: "run",
   checkpoint: asCheckpointIndex(0),
   carry: { x: 0, y: 0, z: 0 },
+  lastContactId: null,
+  contactLockout: 0,
 })
 
 describe("NPC gap handling", () => {
