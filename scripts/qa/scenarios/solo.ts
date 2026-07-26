@@ -33,7 +33,10 @@ export async function runSolo(driver: Driver, browser: Browser): Promise<void> {
 
   const peaks = await driver.readPeaks(page)
   const advanced = peaks.maxZ - peaks.startZ
-  const jumped = peaks.maxY - peaks.startY
+  // The arc between the lowest and highest point, not a difference against a
+  // baseline sampled at an arbitrary moment: `trackPeaks` can start while the
+  // runner is still settling onto the deck, which made a real jump read as none.
+  const jumped = peaks.maxY - peaks.minY
   if (advanced < MIN_ADVANCE_M) {
     throw new ScenarioFailure(
       "solo",

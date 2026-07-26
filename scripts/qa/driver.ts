@@ -10,6 +10,8 @@ import type { Browser, BrowserContext, Page } from "@playwright/test"
 /** Per-frame extremes recorded in-page so assertions never depend on sample timing. */
 export type Peaks = {
   maxY: number
+  /** Lowest grounded height seen — the baseline a jump arc is measured from. */
+  minY: number
   maxZ: number
   startY: number
   startZ: number
@@ -139,12 +141,19 @@ export function createDriver(options: DriverOptions) {
       const api = globalThis.wobble
       if (api === undefined) throw new Error("window.wobble debug API is unavailable")
       const start = api.state().position
-      const peaks = { maxY: start.y, maxZ: start.z, startY: start.y, startZ: start.z }
+      const peaks = {
+        maxY: start.y,
+        minY: start.y,
+        maxZ: start.z,
+        startY: start.y,
+        startZ: start.z,
+      }
       globalThis.__wobblePeaks = peaks
       const sample = (): void => {
         const current = globalThis.wobble?.state().position
         if (current !== undefined) {
           peaks.maxY = Math.max(peaks.maxY, current.y)
+          peaks.minY = Math.min(peaks.minY, current.y)
           peaks.maxZ = Math.max(peaks.maxZ, current.z)
         }
         requestAnimationFrame(sample)
