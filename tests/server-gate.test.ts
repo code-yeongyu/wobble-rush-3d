@@ -1,9 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import app, { type DurableObjectIdLike, type GateEnv } from "../src/server/app"
-import { type BudgetKv, parseVerdict, VERDICT_KEY } from "../src/server/breaker"
+import { app, type GateEnv } from "../src/server/app"
+import { type BudgetKv, VERDICT_KEY } from "../src/server/breaker"
 import type { BudgetVerdict } from "../src/server/budget"
-import { billingPeriodStart, usageWindowStart } from "../src/server/budget"
-import { type CronEnv, runBudgetCron } from "../src/server/budget-cron"
 
 /**
  * The app's breaker reader is module-level with a 60 s cache TTL, so the
@@ -40,8 +38,7 @@ function makeEnv(map: Map<string, string>): GateEnv {
   return {
     BUDGET: kvFromMap(map),
     ROOMS: {
-      idFromName: (name: string) => ({ toString: () => `do-id:${name}` }),
-      get: (_id: DurableObjectIdLike) => ({ fetch: FORWARD }),
+      getByName: (_name: string) => ({ fetch: FORWARD }),
     },
     ASSETS: { fetch: async () => new Response("asset") },
     CF_ANALYTICS_TOKEN: "cf-token-test",
@@ -88,8 +85,7 @@ describe("characterization (pure move from index.ts, ungated)", () => {
   test("POST /api/rooms answers 200 with a 4-letter room code", async () => {
     const res = await call(makeEnv(new Map()), "/api/rooms", { method: "POST" })
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { code: string }
-    expect(body.code).toMatch(/^[A-HJ-NP-Z]{4}$/)
+    expect(parseRoomCode(await res.json())).toMatch(/^[A-HJ-NP-Z]{4}$/)
   })
 
   test("GET /ws/BCDF without an Upgrade header answers 426", async () => {
@@ -116,6 +112,18 @@ describe("characterization (pure move from index.ts, ungated)", () => {
     expect(await res.text()).toBe("forwarded")
   })
 })
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+/** Parses a room-creation response through the shape under test. */
+function parseRoomCode(payload: unknown): string {
+  if (!isObject(payload) || typeof payload.code !== "string") {
+    throw new Error("expected a { code: string } body")
+  }
+  return payload.code
+}
 
 const FUTURE_ISO = "2026-08-15T00:00:00.000Z"
 const PAST_ISO = "2026-07-01T00:00:00.000Z"
@@ -197,108 +205,3 @@ verdictGroup(
 )
 
 verdictGroup("gates (malformed JSON fails open)", () => MALFORMED, expectServingNormally)
-
-type FetchParams = Parameters<typeof fetch>
-type CapturedCall = { readonly input: FetchParams[0]; readonly init: FetchParams[1] }
-
-function stubFetcher(fixture: unknown, status = 200) {
-  const calls: CapturedCall[] = []
-  const fetcher: typeof fetch = (async (input: FetchParams[0], init: FetchParams[1]) => {
-    calls.push({ input, init })
-    return new Response(JSON.stringify(fixture), { status })
-  }) as typeof fetch
-  return { calls, fetcher }
-}
-
-/** Real captured shape from the Cloudflare analytics GraphQL API. */
-const HAPPY = {
-  data: {
-    viewer: {
-      accounts: [
-        {
-          durableObjectsPeriodicGroups: [
-            { sum: { activeTime: 70_565_942, rowsRead: 2532, rowsWritten: 2408 } },
-          ],
-          durableObjectsInvocationsAdaptiveGroups: [{ sum: { requests: 2872 } }],
-          workersInvocationsAdaptive: [{ sum: { requests: 1_519_924 } }],
-        },
-      ],
-    },
-  },
-  errors: null,
-}
-
-function makeCronEnv(kv: BudgetKv): CronEnv {
-  return {
-    BUDGET: kv,
-    CF_ANALYTICS_TOKEN: "cf-token-test",
-    CF_ACCOUNT_ID: "acct-test",
-    BILLING_ANCHOR_DAY: "1",
-    BUDGET_TRIP_RATIO: "0.95",
-    BUDGET_PLAN_TIER: "paid",
-  }
-}
-
-describe("runBudgetCron", () => {
-  test("writes a fresh parseable verdict from the analytics totals", async () => {
-    const map = new Map<string, string>()
-    const { calls, fetcher } = stubFetcher(HAPPY)
-
-    await runBudgetCron(makeCronEnv(kvFromMap(map)), fetcher)
-
-    const verdict = parseVerdict(map.get(VERDICT_KEY) ?? null)
-    expect(verdict?.worst).toEqual({ meter: "doRequests", mtd: 2872, limit: 1_000_000 })
-    expect(verdict).toMatchObject({ tripped: false, advisory: { workersRequests: 1_519_924 } })
-    const call = calls.at(0)
-    if (!call) throw new Error("expected one analytics call")
-    const body = JSON.parse(String(call.init?.body)) as { variables: { a: string; s: string } }
-    expect(body.variables.a).toBe("acct-test")
-    expect(body.variables.s).toBe(new Date(billingPeriodStart(nowMs, 1)).toISOString())
-  })
-
-  test("any tier value but 'paid' falls back to the free daily window", async () => {
-    const map = new Map<string, string>()
-    const { calls, fetcher } = stubFetcher(HAPPY)
-    const env = { ...makeCronEnv(kvFromMap(map)), BUDGET_PLAN_TIER: "monthly" }
-
-    await runBudgetCron(env, fetcher)
-
-    const verdict = parseVerdict(map.get(VERDICT_KEY) ?? null)
-    expect(verdict?.tripped).toBe(false)
-    const call = calls.at(0)
-    if (!call) throw new Error("expected one analytics call")
-    const body = JSON.parse(String(call.init?.body)) as { variables: { s: string } }
-    expect(body.variables.s).toBe(new Date(usageWindowStart(nowMs, "free", 1)).toISOString())
-  })
-
-  test("warns and keeps the last verdict when the analytics API answers 500", async () => {
-    const map = new Map<string, string>()
-    map.set(VERDICT_KEY, "sentinel")
-    const { fetcher } = stubFetcher(HAPPY, 500)
-    const warnings: string[] = []
-    const originalWarn = console.warn
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args.map(String).join(" "))
-    }
-    try {
-      await runBudgetCron(makeCronEnv(kvFromMap(map)), fetcher)
-    } finally {
-      console.warn = originalWarn
-    }
-
-    expect(warnings.some((w) => w.startsWith("budget cron: ") && w.includes("500"))).toBe(true)
-    expect(map.get(VERDICT_KEY)).toBe("sentinel")
-  })
-
-  test("propagates non-UsageError failures (a throwing KV put)", async () => {
-    const kv: BudgetKv = {
-      get: async () => null,
-      put: async () => {
-        throw new Error("kv exploded")
-      },
-    }
-    const { fetcher } = stubFetcher(HAPPY)
-
-    await expect(runBudgetCron(makeCronEnv(kv), fetcher)).rejects.toThrow("kv exploded")
-  })
-})

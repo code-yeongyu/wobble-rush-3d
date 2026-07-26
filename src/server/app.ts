@@ -14,9 +14,6 @@ import { generateRoomCode } from "../shared/room"
 import type { BudgetKv } from "./breaker"
 import { isPaused, makeBreakerReader, PAUSED_MESSAGE } from "./breaker"
 
-/** Structural stand-in for DurableObjectId: the app never needs more than this. */
-export type DurableObjectIdLike = { toString(): string }
-
 /**
  * The binding surface the app reads. Method syntax keeps parameter checking
  * bivariant, so the real DurableObjectNamespace / Fetcher / KVNamespace
@@ -25,8 +22,7 @@ export type DurableObjectIdLike = { toString(): string }
 export type GateEnv = {
   readonly BUDGET: BudgetKv
   readonly ROOMS: {
-    idFromName(name: string): DurableObjectIdLike
-    get(id: DurableObjectIdLike): { fetch(request: Request): Promise<Response> }
+    getByName(name: string): { fetch(request: Request): Promise<Response> }
   }
   readonly ASSETS: { fetch(request: Request): Promise<Response> }
   readonly CF_ANALYTICS_TOKEN: string
@@ -47,7 +43,7 @@ function randomFloat(): number {
 /** Cached, fail-open verdict reader shared by every gated route. */
 const readBreaker = makeBreakerReader()
 
-const app = new Hono<{ Bindings: GateEnv }>()
+export const app = new Hono<{ Bindings: GateEnv }>()
 
 app.get("/api/health", (c) => c.json({ ok: true, version: PROTOCOL_VERSION }))
 
@@ -104,12 +100,7 @@ app.get("/ws/:code", async (c) => {
       503,
     )
   }
-  const id = c.env.ROOMS.idFromName(code)
-  const stub = c.env.ROOMS.get(id)
-  return stub.fetch(c.req.raw)
+  return c.env.ROOMS.getByName(code).fetch(c.req.raw)
 })
 
 app.notFound((c) => c.env.ASSETS.fetch(c.req.raw))
-
-// biome-ignore lint/style/noDefaultExport: index.ts mounts this app as the Worker's fetch handler
-export default app

@@ -16,6 +16,7 @@ import type { PlayerId } from "../shared/types"
 import { asPlayerId, asRoomCode, assertNever } from "../shared/types"
 import { isPaused, makeBreakerReader, PAUSED_MESSAGE } from "./breaker"
 import { blockedWhilePaused, drainOnPause, gateRoomFetch } from "./drain-policy"
+import { decideConnect } from "./room-connect"
 
 export type Env = {
   readonly ROOMS: DurableObjectNamespace
@@ -29,6 +30,12 @@ export type Env = {
 }
 
 const STORAGE_KEY = "room"
+/**
+ * First paused alarm tick of the current pause episode. Persisted (unlike an
+ * instance field) so DO eviction or redeploy cannot restart the race grace
+ * window forever; costs at most two rows per pause episode (put + delete).
+ */
+const PAUSED_SINCE_KEY = "pausedSince"
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z]{4}$/
 /** Practical floor for alarm re-arms: DO alarms have second granularity. */
 const ALARM_INTERVAL_MS = 1000
@@ -69,14 +76,7 @@ function toAction(message: ClientMessage, id: PlayerId): RoomAction {
       return {
         kind: "state",
         id,
-        state: {
-          id,
-          p: message.p,
-          v: message.v,
-          yaw: message.yaw,
-          st: message.st,
-          cp: message.cp,
-        },
+        state: { id, p: message.p, v: message.v, yaw: message.yaw, st: message.st, cp: message.cp },
       }
     case "finish":
       return { kind: "finish", id, timeMs: message.timeMs }
@@ -90,8 +90,6 @@ function toAction(message: ClientMessage, id: PlayerId): RoomAction {
 }
 
 export class RoomDurableObject extends DurableObject<Env> {
-  private pausedSinceMs: number | null = null
-
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     // Answer keepalives without waking the isolate out of hibernation.
@@ -123,15 +121,19 @@ export class RoomDurableObject extends DurableObject<Env> {
       return jsonError(426, "upgrade_required", "Expected a WebSocket upgrade request")
     }
 
-    if (gateRoomFetch(await readBreaker(this.env.BUDGET, Date.now()), Date.now())) {
-      return jsonError(503, "service_paused", PAUSED_MESSAGE)
-    }
-
-    let room = await this.loadRoom()
-    if (room === null) {
-      room = createRoom(asRoomCode(code), randomSeed())
-      await this.saveRoom(room)
-    }
+    const nowMs = Date.now()
+    const decision = await decideConnect({
+      nowMs,
+      readVerdict: () => readBreaker(this.env.BUDGET, nowMs),
+      loadRoom: () => this.loadRoom(),
+      createRoom: async () => {
+        const fresh = createRoom(asRoomCode(code), randomSeed())
+        await this.saveRoom(fresh)
+        return fresh
+      },
+    })
+    if (decision.kind === "paused") return jsonError(503, "service_paused", PAUSED_MESSAGE)
+    const room = decision.room
 
     const pair = new WebSocketPair()
     const client = pair[0]
@@ -179,7 +181,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     }
 
     if (
-      blockedWhilePaused(decoded.type) &&
+      blockedWhilePaused(decoded.type, room.phase) &&
       gateRoomFetch(await readBreaker(this.env.BUDGET, Date.now()), Date.now())
     ) {
       ws.send(
@@ -214,9 +216,10 @@ export class RoomDurableObject extends DurableObject<Env> {
     const room = await this.loadRoom()
     if (room === null) return
     const now = Date.now()
+    const since = (await this.ctx.storage.get<number>(PAUSED_SINCE_KEY)) ?? null
     if (isPaused(await readBreaker(this.env.BUDGET, now), now)) {
-      this.pausedSinceMs ??= now
-      if (drainOnPause(room.phase, now - this.pausedSinceMs)) {
+      if (since === null) await this.ctx.storage.put(PAUSED_SINCE_KEY, now)
+      if (drainOnPause(room.phase, now - (since ?? now))) {
         const frame = encodeServerMessage({
           type: "error",
           code: "service_paused",
@@ -229,8 +232,8 @@ export class RoomDurableObject extends DurableObject<Env> {
         // No re-arm: the drained room goes idle.
         return
       }
-    } else {
-      this.pausedSinceMs = null
+    } else if (since !== null) {
+      await this.ctx.storage.delete(PAUSED_SINCE_KEY)
     }
     const { state, effects } = reduceRoom(room, { kind: "tick" }, now)
     await this.saveRoom(state)

@@ -1,6 +1,20 @@
 import { chromium } from "@playwright/test"
 import "./driver"
 
+// Derive the expected reset day from the live server instead of pinning a date.
+const statusRes = await fetch("http://localhost:8788/api/status")
+const statusPayload: unknown = await statusRes.json()
+if (
+  typeof statusPayload !== "object" ||
+  statusPayload === null ||
+  !("resetsAt" in statusPayload) ||
+  typeof statusPayload.resetsAt !== "string"
+) {
+  throw new Error("FAIL: /api/status resetsAt is not a string (is the breaker tripped?)")
+}
+const expectedDay = statusPayload.resetsAt.slice(0, 10)
+console.log("expected reset day from /api/status:", expectedDay)
+
 const b = await chromium.launch({
   headless: true,
   args: ["--use-gl=angle", "--enable-unsafe-swiftshader"],
@@ -20,7 +34,7 @@ await p.waitForFunction(
 )
 const msg = await p.evaluate(() => document.querySelector("#error-message")?.textContent ?? "")
 console.log("party error message:", JSON.stringify(msg))
-if (!msg.includes("paused") || !msg.includes("2026-07-27"))
+if (!msg.includes("paused") || !msg.includes(expectedDay))
   throw new Error("FAIL: pause message wrong")
 await p.screenshot({ path: ".omo/evidence/cost-guard/task-8-pause-message.png" })
 console.log("PARTY PAUSE UX PASS (screenshot saved)")

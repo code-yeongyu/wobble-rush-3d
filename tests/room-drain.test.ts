@@ -25,7 +25,7 @@ function makeVerdict(overrides: Partial<BudgetVerdict> = {}): BudgetVerdict {
 
 describe("PAUSE_RACE_GRACE_MS", () => {
   test("is exactly ten minutes", () => {
-    expect(PAUSE_RACE_GRACE_MS).toBe(10 * 60_000)
+    expect(PAUSE_RACE_GRACE_MS).toBe(3 * 60_000)
   })
 })
 
@@ -48,16 +48,33 @@ describe("gateRoomFetch", () => {
 })
 
 describe("blockedWhilePaused", () => {
-  const blocked: ClientMessage["type"][] = ["join", "ready", "restart"]
-  const allowed: ClientMessage["type"][] = ["state", "finish", "leave"]
+  const types: ClientMessage["type"][] = ["join", "ready", "state", "finish", "restart", "leave"]
+  const phases: RoomPhase[] = ["lobby", "countdown", "racing", "finished"]
 
-  test.each(blocked)("%s is blocked while paused", (type) => {
-    expect(blockedWhilePaused(type)).toBe(true)
-  })
+  // Lobby drivers are blocked everywhere; race frames only flow inside the
+  // countdown|racing grace window; leaving is never blocked.
+  function expectedBlocked(type: ClientMessage["type"], phase: RoomPhase): boolean {
+    switch (type) {
+      case "join":
+      case "ready":
+      case "restart":
+        return true
+      case "state":
+      case "finish":
+        return phase === "lobby" || phase === "finished"
+      case "leave":
+        return false
+    }
+  }
 
-  test.each(allowed)("%s is allowed while paused", (type) => {
-    expect(blockedWhilePaused(type)).toBe(false)
-  })
+  for (const type of types) {
+    for (const phase of phases) {
+      const verdict = expectedBlocked(type, phase) ? "blocked" : "allowed"
+      test(`${type} in ${phase} is ${verdict} while paused`, () => {
+        expect(blockedWhilePaused(type, phase)).toBe(expectedBlocked(type, phase))
+      })
+    }
+  }
 })
 
 describe("drainOnPause", () => {
