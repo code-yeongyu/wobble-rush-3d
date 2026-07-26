@@ -80,3 +80,7 @@ export function isPaused(verdict: BudgetVerdict | null, nowMs: number): boolean 
   }
   return nowMs < Date.parse(verdict.resetsAtIso)
 }
+
+/** One user-facing sentence shared by every paused rejection the server sends. */
+export const PAUSED_MESSAGE =
+  "Multiplayer is paused to stay inside the hosting budget. Solo still works."

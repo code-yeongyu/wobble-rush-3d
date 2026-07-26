@@ -17,7 +17,7 @@ const ANALYTICS_URL = "https://api.cloudflare.com/client/v4/graphql"
 /** One document, three datasets; variables keep account and window out of the query text. */
 const USAGE_QUERY = `query($a:String!,$s:Time!){viewer{accounts(filter:{accountTag:$a}){
  durableObjectsPeriodicGroups(limit:2, filter:{datetime_geq:$s}){sum{activeTime rowsWritten rowsRead}}
- durableObjectsInvocationsAdaptiveGroups(limit:2, filter:{datetime_geq:$s}){sum{requests}}
+ durableObjectsInvocationsAdaptiveGroups(limit:2, filter:{datetime_geq:$s}){sum{requests inboundWebsocketMsgCount}}
  workersInvocationsAdaptive(limit:2, filter:{datetime_geq:$s}){sum{requests}}
 }}}`
 
@@ -45,13 +45,17 @@ const periodicGroupSchema = z.object({
   }),
 })
 
+const doInvocationGroupSchema = z.object({
+  sum: z.object({ requests: z.number(), inboundWebsocketMsgCount: z.number() }),
+})
+
 const invocationGroupSchema = z.object({
   sum: z.object({ requests: z.number() }),
 })
 
 const accountSchema = z.object({
   durableObjectsPeriodicGroups: z.array(periodicGroupSchema),
-  durableObjectsInvocationsAdaptiveGroups: z.array(invocationGroupSchema),
+  durableObjectsInvocationsAdaptiveGroups: z.array(doInvocationGroupSchema),
   workersInvocationsAdaptive: z.array(invocationGroupSchema),
 })
 
@@ -134,9 +138,19 @@ export async function fetchUsageTotals(
   )
   const workers = singleNode(account.workersInvocationsAdaptive, "workersInvocationsAdaptive")
 
+  const rawRequests = doInvocations?.sum.requests ?? 0
+  const inboundWs = doInvocations?.sum.inboundWebsocketMsgCount ?? 0
+  // Cloudflare bills incoming WebSocket messages to a DO at 20 messages per
+  // billed request, while every other invocation bills 1:1
+  // (https://developers.cloudflare.com/durable-objects/platform/pricing/).
+  // sum.requests counts raw invocations, so split off the WebSocket traffic
+  // and re-price it; the two counters are sampled independently and inboundWs
+  // can exceed rawRequests, so the 1:1 remainder clamps at zero.
+  const doRequests = Math.max(0, rawRequests - inboundWs) + Math.ceil(inboundWs / 20)
+
   const activeTimeMicros = periodic?.sum.activeTime ?? 0
   return {
-    doRequests: doInvocations?.sum.requests ?? 0,
+    doRequests,
     // DO duration bills a fixed 128 MB (https://developers.cloudflare.com/durable-objects/platform/pricing/)
     gbSeconds: (activeTimeMicros / 1e6) * 0.125,
     rowsWritten: periodic?.sum.rowsWritten ?? 0,

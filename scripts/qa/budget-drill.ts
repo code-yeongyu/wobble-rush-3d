@@ -10,6 +10,22 @@ const ROOM_A = code()
 const ROOM_B = code()
 const sockets: Sock[] = []
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+/** Parses a raw socket payload through the frame shape - no casts. */
+function parseFrame(data: unknown): Frame {
+  const value: unknown = JSON.parse(String(data))
+  if (!isObject(value) || typeof value.type !== "string") {
+    throw new Error(`malformed frame: ${String(data)}`)
+  }
+  const frame: Frame = { type: value.type }
+  if (typeof value.phase === "string") frame.phase = value.phase
+  if (typeof value.code === "string") frame.code = value.code
+  return frame
+}
+
 function connect(room: string, name: string): Promise<Sock> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${BASE}/${room}`)
@@ -21,7 +37,7 @@ function connect(room: string, name: string): Promise<Sock> {
       s.closed = e.code
     }
     ws.onmessage = (e) => {
-      s.frames.push(JSON.parse(String(e.data)) as Frame)
+      s.frames.push(parseFrame(e.data))
     }
   })
 }
@@ -72,7 +88,7 @@ const verdict = JSON.stringify({
   tripped: true,
   worst: { meter: "rowsWritten", mtd: 95000, limit: 100000 },
   advisory: { workersRequests: 1 },
-  resetsAtIso: "2026-08-01T00:00:00.000Z",
+  resetsAtIso: new Date(Date.now() + 86_400_000).toISOString(),
   computedAtIso: new Date().toISOString(),
 })
 const put = Bun.spawnSync(
@@ -93,13 +109,17 @@ console.log("R4 DRAIN PASS: both B sockets got service_paused and closed", b1.cl
 // R5: A tries to start a race — must be rejected, no countdown ever
 send(a1, { type: "ready", ready: true })
 send(a2, { type: "ready", ready: true })
-await until(() => has(a1, pausedErr) && has(a2, pausedErr), 8000, "A service_paused rejections")
-await new Promise((r) => setTimeout(r, 2000)) // observation window for any stray countdown
+await until(
+  () => has(a1, pausedErr) && has(a2, pausedErr) && a1.closed !== null && a2.closed !== null,
+  8000,
+  "A service_paused rejections + closes",
+)
+// Both sockets are closed, so nothing more can arrive: the frames collected up
+// to the close events are the complete record - no timing luck involved.
 const aCountdown = [a1, a2].some((s) =>
   has(s, (f) => f.type === "phase" && f.phase === "countdown"),
 )
 if (aCountdown) throw new Error("FAIL: countdown started while tripped")
-await until(() => a1.closed !== null && a2.closed !== null, 5000, "A closes")
 console.log(
   "R5 LOBBY-BYPASS PASS: ready rejected with service_paused, no countdown, sockets closed",
   a1.closed,

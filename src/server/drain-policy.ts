@@ -15,10 +15,14 @@ import { isPaused } from "./breaker"
 import type { BudgetVerdict } from "./budget"
 
 /**
- * A race lasts 1-2 minutes; this is the hard ceiling a tripped countdown or
- * racing room may keep running before its next alarm tick drains it.
+/**
+ * A race lasts 1-2 minutes; three covers any legitimate finish. The bound on
+ * free-tier overshoot while a race rides out this grace is documented in the
+ * PR: breaker staleness is at most ~2 min (60 s KV edge cache + 60 s isolate
+ * cache), and Cloudflare's own daily caps remain the hard backstop behind
+ * this guard.
  */
-export const PAUSE_RACE_GRACE_MS = 10 * 60_000
+export const PAUSE_RACE_GRACE_MS = 3 * 60_000
 
 /**
  * True = refuse the new connection. The single named decision point for the
@@ -29,10 +33,13 @@ export function gateRoomFetch(verdict: BudgetVerdict | null, nowMs: number): boo
 }
 
 /**
- * Messages that move a room forward are blocked while paused; passive or
- * leaving traffic still flows so in-flight races can wind down on grace.
+ * Messages that move a room forward are blocked while paused. Lobby drivers
+ * (join/ready/restart) are refused in every phase; state/finish frames only
+ * flow during the countdown|racing grace window - in lobby or finished they
+ * would each trigger a reduceRoom + saveRoom storage write with no armed
+ * alarm to drain an idle room. Leaving is never blocked.
  */
-export function blockedWhilePaused(type: ClientMessage["type"]): boolean {
+export function blockedWhilePaused(type: ClientMessage["type"], phase: RoomPhase): boolean {
   switch (type) {
     case "join":
     case "ready":
@@ -40,6 +47,16 @@ export function blockedWhilePaused(type: ClientMessage["type"]): boolean {
       return true
     case "state":
     case "finish":
+      switch (phase) {
+        case "countdown":
+        case "racing":
+          return false
+        case "lobby":
+        case "finished":
+          return true
+        default:
+          return assertNever(phase, "RoomPhase")
+      }
     case "leave":
       return false
     default:

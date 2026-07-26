@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoom, fetchServiceStatus, NetworkError, pauseMessage } from "../src/client/net"
+import { partyFailureText } from "../src/client/party-link"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -8,12 +9,26 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function stubFetch(impl: () => Promise<Response>): typeof fetch {
-  return impl as unknown as typeof fetch
+/** Relative fetch targets resolve against a dummy origin so a Request can be built. */
+function toRequest(input: string | URL | Request, init?: RequestInit): Request {
+  if (typeof input === "string" || input instanceof URL) {
+    return new Request(new URL(input.toString(), "http://test.local"), init)
+  }
+  return init === undefined ? input : new Request(input, init)
+}
+
+/** Builds a real `fetch`-shaped stub around a Request handler - no casts. */
+function stubFetch(handler: (req: Request) => Response | Promise<Response>): typeof fetch {
+  const impl = async (...args: Parameters<typeof fetch>): ReturnType<typeof fetch> => {
+    const [input, init] = args
+    return handler(toRequest(input, init))
+  }
+  // Bun's fetch carries a custom `preconnect`; the stub re-exports the real one.
+  return Object.assign(impl, { preconnect: fetch.preconnect })
 }
 
 function failingFetch(error: unknown): typeof fetch {
-  return (() => Promise.reject(error)) as unknown as typeof fetch
+  return stubFetch(() => Promise.reject(error))
 }
 
 describe("pauseMessage", () => {
@@ -83,8 +98,8 @@ describe("createRoom", () => {
       await createRoom(fetcher)
       expect.unreachable("createRoom should throw")
     } catch (error) {
-      expect(error).toBeInstanceOf(NetworkError)
-      expect((error as Error).message).toContain("2026-08-01")
+      if (!(error instanceof NetworkError)) throw error
+      expect(error.message).toContain("2026-08-01")
     }
   })
 
@@ -94,8 +109,20 @@ describe("createRoom", () => {
       await createRoom(fetcher)
       expect.unreachable("createRoom should throw")
     } catch (error) {
-      expect(error).toBeInstanceOf(NetworkError)
-      expect((error as Error).message).toContain("HTTP 503")
+      if (!(error instanceof NetworkError)) throw error
+      expect(error.message).toContain("HTTP 503")
     }
+  })
+})
+
+describe("partyFailureText", () => {
+  test("passes a service_paused message through verbatim", () => {
+    expect(partyFailureText("service_paused", "Multiplayer is paused")).toBe(
+      "Multiplayer is paused",
+    )
+  })
+
+  test("prefixes any other error code", () => {
+    expect(partyFailureText("room_full", "Room is full")).toBe("room_full: Room is full")
   })
 })

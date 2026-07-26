@@ -7,6 +7,8 @@
  * without stopping its own cause.
  */
 
+import { assertNever } from "../shared/types"
+
 /**
  * Monthly included allowances on the Workers Paid plan.
  * https://developers.cloudflare.com/durable-objects/platform/pricing/
@@ -81,6 +83,8 @@ function mtdFor(meter: DoMeter, usage: UsageTotals): number {
       return usage.rowsWritten
     case "rowsRead":
       return usage.rowsRead
+    default:
+      return assertNever(meter, "DoMeter")
   }
 }
 

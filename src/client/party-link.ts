@@ -9,6 +9,15 @@ import type { PlayerId } from "../shared/types"
 import { assertNever } from "../shared/types"
 import { createRoom, fetchServiceStatus, NetClient, NetworkError, pauseMessage } from "./net"
 
+/**
+ * Renders an in-band error frame for the UI: a service_paused notice is already
+ * player-facing copy and passes through verbatim; anything else gets its code
+ * prefixed so the failure stays diagnosable.
+ */
+export function partyFailureText(code: string, message: string): string {
+  return code === "service_paused" ? message : `${code}: ${message}`
+}
+
 export type PartyEvents = {
   onWelcome(you: PlayerId, snapshot: RoomSnapshot, seed: number): void
   onRoster(snapshot: RoomSnapshot): void
@@ -94,11 +103,7 @@ export class PartyLink {
         this.events.onResults(message.results)
         break
       case "error":
-        this.events.onFailure(
-          message.code === "service_paused"
-            ? message.message
-            : `${message.code}: ${message.message}`,
-        )
+        this.events.onFailure(partyFailureText(message.code, message.message))
         break
       default:
         assertNever(message, "PartyLink.dispatch")

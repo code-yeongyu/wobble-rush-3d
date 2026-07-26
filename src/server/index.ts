@@ -8,7 +8,7 @@
  * Workers globals (ScheduledController, ExecutionContext) are fine here.
  */
 
-import app from "./app"
+import { app } from "./app"
 import { runBudgetCron } from "./budget-cron"
 import type { Env } from "./room-do"
 
