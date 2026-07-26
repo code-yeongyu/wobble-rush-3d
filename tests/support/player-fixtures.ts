@@ -1,6 +1,6 @@
 /**
  * Shared player-sim test fixtures: a hand-built stub world (flat floor at y=0
- * or a void, optional carry, one-shot contact events, checkpoint/finish
+ * or a void, optional carry, scripted contact impulses, checkpoint/finish
  * triggers and a kill plane) plus the step-running helpers. Deterministic by
  * construction.
  */
@@ -9,7 +9,10 @@ import { FIXED_STEP_SEC, RUNNER } from "../../src/shared/constants"
 import { stepRunner } from "../../src/shared/player"
 import type {
   Checkpoint,
+  ContactImpulse,
+  ContactKind,
   ContactResult,
+  ObstacleId,
   PlayerInput,
   RunnerSim,
   SimEvent,
@@ -21,10 +24,34 @@ import { asCheckpointIndex, asObstacleId, NEUTRAL_INPUT, vec3 } from "../../src/
 export const DT = FIXED_STEP_SEC
 export const RESPAWN = vec3(0, RUNNER.radius, 0)
 
+export type ContactImpulseInit = {
+  readonly kind?: ContactKind
+  readonly obstacle?: ObstacleId
+  readonly direction?: Vec3
+  readonly speed?: number
+  readonly lift?: number
+  readonly point?: Vec3
+  readonly depth?: number
+}
+
+/** Build a contact impulse with realistic defaults; override what the test cares about. */
+export const makeContactImpulse = (init: ContactImpulseInit = {}): ContactImpulse => ({
+  kind: init.kind ?? "sweeper",
+  obstacle: init.obstacle ?? asObstacleId("sweeper-test"),
+  direction: init.direction ?? vec3(0, 0, -1),
+  speed: init.speed ?? 9,
+  lift: init.lift ?? 4,
+  point: init.point ?? vec3(0, RUNNER.radius, 0),
+  depth: init.depth ?? 0.2,
+})
+
 export type StubWorldOptions = {
   readonly solid?: boolean
   readonly carry?: Vec3
-  readonly firstContactEvents?: readonly SimEvent[]
+  /** Impulses reported on the FIRST resolve call only. */
+  readonly firstContactImpulses?: readonly ContactImpulse[]
+  /** Impulses scripted per resolve call (1-based); overrides firstContactImpulses. */
+  readonly impulsesWhen?: (resolveCall: number) => readonly ContactImpulse[]
   readonly checkpointWhen?: (position: Vec3) => Checkpoint | null
   readonly finishWhen?: (position: Vec3) => boolean
   readonly killY?: number
@@ -39,17 +66,21 @@ export const makeStubWorld = (options: StubWorldOptions = {}): WorldSnapshot => 
     timeSec: 0,
     resolve(_previous: Vec3, desired: Vec3, velocity: Vec3, radius: number): ContactResult {
       resolveCalls += 1
-      const events = resolveCalls === 1 ? (options.firstContactEvents ?? []) : []
+      const impulses = options.impulsesWhen
+        ? options.impulsesWhen(resolveCalls)
+        : resolveCalls === 1
+          ? (options.firstContactImpulses ?? [])
+          : []
       if (solid && desired.y <= radius && velocity.y <= 0) {
         return {
           position: vec3(desired.x, radius, desired.z),
           velocity: vec3(velocity.x, 0, velocity.z),
           grounded: true,
           carry,
-          events,
+          impulses,
         }
       }
-      return { position: desired, velocity, grounded: false, carry: vec3(0, 0, 0), events }
+      return { position: desired, velocity, grounded: false, carry: vec3(0, 0, 0), impulses }
     },
     checkpointAt(position: Vec3): Checkpoint | null {
       return options.checkpointWhen?.(position) ?? null

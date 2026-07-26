@@ -9,6 +9,7 @@
  */
 
 import { RUNNER } from "./constants"
+import { applyContactImpulses } from "./contact-response"
 import type {
   MutVec3,
   PlayerInput,
@@ -18,7 +19,7 @@ import type {
   Vec3,
   WorldSnapshot,
 } from "./types"
-import { asCheckpointIndex, NEUTRAL_INPUT, vec3 } from "./types"
+import { asCheckpointIndex, vec3 } from "./types"
 
 /** Grounded horizontal speed above which the state reads "run" (m/s). */
 const RUN_SPEED_THRESHOLD = 0.35
@@ -28,6 +29,18 @@ const DIVE_DIRECTION_SPEED = 0.5
 const YAW_TRACK_SPEED = 0.1
 /** Fraction of air acceleration available for steering while a dive is committed. */
 const DIVE_STEER_FACTOR = 0.35
+/**
+ * Seconds the same obstacle is ignored after its impulse fires. The collision
+ * clinic measured overlap episodes of up to 6 ticks (0.1 s) for one arm pass
+ * and the arm keeps sweeping for longer; 0.5 s (~30 ticks) outlasts any full
+ * overlap with margin while staying far shorter than a sweeper's revisit
+ * period, so the NEXT pass still connects.
+ */
+/** Share of the runner's current horizontal velocity carried through a hit. */
+/** Seconds of zero steering right after a hit; authority then ramps back. */
+const STUMBLE_DEAD_SEC = 0.15
+/** Seconds over which stumble steering ramps from zero back to full. */
+const STUMBLE_RAMP_SEC = (RUNNER.stumbleSec - STUMBLE_DEAD_SEC) * 0.75
 
 const horizontalSpeed = (velocity: MutVec3): number => Math.hypot(velocity.x, velocity.z)
 
@@ -43,6 +56,17 @@ const deriveState = (sim: RunnerSim, speed: number): RunnerState => {
   if (!sim.grounded) return "air"
   if (speed > RUN_SPEED_THRESHOLD) return "run"
   return "idle"
+}
+
+/**
+ * Steering authority during a stumble: a short dead zone absorbs the blow,
+ * then control ramps back linearly, reaching full authority before the
+ * stumble timer clears, so a hit never feels like a full input sentence.
+ */
+const stumbleSteerAuthority = (stumbleTimer: number): number => {
+  if (stumbleTimer <= 0) return 1
+  const elapsed = RUNNER.stumbleSec - stumbleTimer - STUMBLE_DEAD_SEC
+  return Math.max(0, Math.min(1, elapsed / STUMBLE_RAMP_SEC))
 }
 
 /**
@@ -99,6 +123,8 @@ export function createRunner(spawn: Vec3, yaw: number): RunnerSim {
     state: "idle",
     checkpoint: asCheckpointIndex(-1),
     carry: { x: 0, y: 0, z: 0 },
+    lastContactId: null,
+    contactLockout: 0,
   }
 }
 
@@ -121,6 +147,8 @@ export function respawnRunner(sim: RunnerSim, respawnPoint: Vec3): void {
   sim.carry.x = 0
   sim.carry.y = 0
   sim.carry.z = 0
+  sim.lastContactId = null
+  sim.contactLockout = 0
 }
 
 /**
@@ -142,14 +170,15 @@ export function stepRunner(
   sim.diveTimer = Math.max(0, sim.diveTimer - dt)
   sim.diveCooldown = Math.max(0, sim.diveCooldown - dt)
   sim.stumbleTimer = Math.max(0, sim.stumbleTimer - dt)
+  sim.contactLockout = Math.max(0, sim.contactLockout - dt)
 
-  // During a stumble the course owns the body: every input is ignored while
-  // velocity keeps integrating.
-  const controls: PlayerInput = sim.stumbleTimer > 0 ? NEUTRAL_INPUT : input
+  // A stumble locks jump/dive entirely, but steering only briefly: a short
+  // dead zone absorbs the blow, then authority ramps back (see above).
+  const authority = stumbleSteerAuthority(sim.stumbleTimer)
 
   // Jump: fresh presses refill the buffer; the buffer fires on the ground or
   // inside the coyote window, and never twice for one airborne spell.
-  if (controls.jumpPressed) sim.jumpBuffer = RUNNER.jumpBufferSec
+  if (sim.stumbleTimer <= 0 && input.jumpPressed) sim.jumpBuffer = RUNNER.jumpBufferSec
   const canJump = sim.grounded || sim.timeSinceGrounded <= RUNNER.coyoteSec
   if (sim.jumpBuffer > 0 && !sim.jumpRising && canJump) {
     sim.velocity.y = RUNNER.jumpSpeed
@@ -161,7 +190,7 @@ export function stepRunner(
 
   // Dive: a committed burst along the current travel direction (or facing
   // when nearly stationary), plus a small hop of lift.
-  if (controls.divePressed && sim.diveCooldown <= 0 && sim.diveTimer <= 0) {
+  if (sim.stumbleTimer <= 0 && input.divePressed && sim.diveCooldown <= 0 && sim.diveTimer <= 0) {
     const speed = horizontalSpeed(sim.velocity)
     const dirX = speed > DIVE_DIRECTION_SPEED ? sim.velocity.x / speed : Math.sin(sim.yaw)
     const dirZ = speed > DIVE_DIRECTION_SPEED ? sim.velocity.z / speed : Math.cos(sim.yaw)
@@ -178,21 +207,22 @@ export function stepRunner(
   // The camera looks along F = (sin yaw, 0, cos yaw), so the direction the player
   // sees as right is R = F x up = (-cos yaw, 0, sin yaw). Steering strafe along
   // +R is what makes D move right on screen; the mirrored basis sends it left.
-  const magnitude = Math.hypot(controls.forward, controls.strafe)
+  const magnitude = Math.hypot(input.forward, input.strafe)
   if (magnitude > 0) {
     const inputScale = magnitude > 1 ? 1 / magnitude : 1
-    const forward = controls.forward * inputScale
-    const strafe = controls.strafe * inputScale
-    const sin = Math.sin(controls.cameraYaw)
-    const cos = Math.cos(controls.cameraYaw)
+    const forward = input.forward * inputScale
+    const strafe = input.strafe * inputScale
+    const sin = Math.sin(input.cameraYaw)
+    const cos = Math.cos(input.cameraYaw)
     const wishX = sin * forward - cos * strafe
     const wishZ = cos * forward + sin * strafe
     const diving = sim.diveTimer > 0
-    const accel = diving
-      ? RUNNER.airAccel * DIVE_STEER_FACTOR
-      : sim.grounded
-        ? RUNNER.groundAccel
-        : RUNNER.airAccel
+    const accel =
+      (diving
+        ? RUNNER.airAccel * DIVE_STEER_FACTOR
+        : sim.grounded
+          ? RUNNER.groundAccel
+          : RUNNER.airAccel) * authority
     if (horizontalSpeed(sim.velocity) <= RUNNER.runSpeed) {
       approachHorizontal(sim.velocity, wishX * RUNNER.runSpeed, wishZ * RUNNER.runSpeed, accel * dt)
     } else {
@@ -214,7 +244,7 @@ export function stepRunner(
   // Gravity: held jump floats, released jump cuts short (variable height),
   // falls are snappy, and terminal velocity is capped.
   if (sim.velocity.y > 0) {
-    sim.velocity.y -= (controls.jumpHeld ? RUNNER.gravityRise : RUNNER.gravityCut) * dt
+    sim.velocity.y -= (input.jumpHeld ? RUNNER.gravityRise : RUNNER.gravityCut) * dt
   } else {
     sim.velocity.y -= RUNNER.gravityFall * dt
   }
@@ -253,11 +283,7 @@ export function stepRunner(
     return events
   }
 
-  // Contact events (hits, bounces) are forwarded; a hit starts a stumble.
-  for (const event of contact.events) {
-    events.push(event)
-    if (event.kind === "hit") sim.stumbleTimer = RUNNER.stumbleSec
-  }
+  applyContactImpulses(sim, contact.impulses, events)
 
   // Touchdown.
   if (wasAirborne && sim.grounded) {
