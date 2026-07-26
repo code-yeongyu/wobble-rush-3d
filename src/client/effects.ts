@@ -13,6 +13,7 @@ export class Effects {
   private readonly puffs = new ParticlePool(240, 0.42, THREE.NormalBlending)
   private readonly sparks = new ParticlePool(420, 0.3, THREE.AdditiveBlending)
   private readonly confetti = new ParticlePool(320, 0.34, THREE.NormalBlending)
+  private readonly impactRing = new RingBurst(PALETTE.hazard)
   private readonly checkpointRing = new RingBurst(PALETTE.deckRest)
   private readonly finishRing = new RingBurst(PALETTE.finish)
   private readonly respawnRing = new RingBurst(PALETTE.mover)
@@ -20,6 +21,7 @@ export class Effects {
 
   constructor() {
     this.group.add(this.puffs.points, this.sparks.points, this.confetti.points)
+    this.group.add(this.impactRing.mesh)
     this.group.add(this.checkpointRing.mesh, this.finishRing.mesh, this.respawnRing.mesh)
   }
 
@@ -51,8 +53,22 @@ export class Effects {
   }
 
   hit(at: Vec3): void {
+    // One decisive crack: a fast white-hot core, hazard-coloured body sparks,
+    // and a snappy shock ring at the contact point (350 ms, under the 600 ms
+    // motion ceiling).
+    this.impactRing.fire(at, 0.35)
+    this.scratch.set("#ffffff")
+    for (let index = 0; index < 10; index += 1) {
+      this.sparks.spawn(at, this.scratch, {
+        speed: 7,
+        lift: 3.5,
+        life: 0.3,
+        gravity: 10,
+        spread: 1.6,
+      })
+    }
     this.scratch.set(PALETTE.hazard)
-    for (let index = 0; index < 22; index += 1) {
+    for (let index = 0; index < 16; index += 1) {
       this.sparks.spawn(at, this.scratch, {
         speed: 5.5,
         lift: 3,
@@ -118,6 +134,7 @@ export class Effects {
     this.puffs.update(dt)
     this.sparks.update(dt)
     this.confetti.update(dt)
+    this.impactRing.update(dt)
     this.checkpointRing.update(dt)
     this.finishRing.update(dt)
     this.respawnRing.update(dt)
@@ -127,6 +144,7 @@ export class Effects {
     this.puffs.dispose()
     this.sparks.dispose()
     this.confetti.dispose()
+    this.impactRing.dispose()
     this.checkpointRing.dispose()
     this.finishRing.dispose()
     this.respawnRing.dispose()

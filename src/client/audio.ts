@@ -3,6 +3,13 @@
  * buffers — no sampled assets, nothing licensed, nothing to fail to download.
  */
 
+import { CueGuard } from "./impact-guard"
+
+/** Simultaneous cue voices allowed on the bus; extras drop instead of clipping. */
+const MAX_VOICES = 12
+/** Backstop retrigger window for identical cues, even for direct callers. */
+const CUE_RETRIGGER_SEC = 0.09
+
 export class AudioUnavailableError extends Error {
   constructor(cause: string) {
     super(`WebAudio is unavailable: ${cause}`)
@@ -30,6 +37,8 @@ export class AudioKit {
   private master: GainNode | null = null
   private musicGain: GainNode | null = null
   private musicTimer: ReturnType<typeof globalThis.setInterval> | null = null
+  private activeVoices = 0
+  private readonly cueGuard = new CueGuard(CUE_RETRIGGER_SEC)
   private enabled = true
 
   get muted(): boolean {
@@ -47,7 +56,16 @@ export class AudioKit {
     const context = new Ctor()
     const master = context.createGain()
     master.gain.value = this.enabled ? 0.5 : 0
-    master.connect(context.destination)
+    // A gentle bus compressor keeps stacked cues from clipping, backed up by
+    // the voice budget and the retrigger guard below.
+    const compressor = context.createDynamicsCompressor()
+    compressor.threshold.value = -12
+    compressor.knee.value = 6
+    compressor.ratio.value = 8
+    compressor.attack.value = 0.003
+    compressor.release.value = 0.18
+    master.connect(compressor)
+    compressor.connect(context.destination)
     const music = context.createGain()
     music.gain.value = 0.16
     music.connect(master)
@@ -63,25 +81,32 @@ export class AudioKit {
     }
   }
 
-  play(cue: Cue): void {
+  play(cue: Cue, intensity = 1): void {
     const context = this.context
     const master = this.master
     if (context === null || master === null || !this.enabled) return
     const now = context.currentTime
+    // Backstop: identical cues retriggered inside the burst window drop here,
+    // even for callers that bypass race-feedback's guard.
+    if (!this.cueGuard.allow(cue, now)) return
+    const level = Math.min(1, Math.max(0, intensity))
 
     switch (cue) {
       case "jump":
         this.blip(now, 330, 620, 0.16, "triangle", 0.28)
         break
       case "land":
-        this.thud(now, 0.16)
+        this.thud(now, 0.12 + 0.14 * level)
         break
       case "dive":
         this.sweep(now, 720, 180, 0.3, 0.22)
         break
       case "hit":
-        this.noise(now, 0.28, 900, 0.4)
-        this.blip(now, 180, 90, 0.24, "square", 0.2)
+        // One solid thwack: a bright noise snap for the crack, a low sine
+        // thump for body, and a quiet square tick for the attack transient.
+        this.noise(now, 0.16, 1400, 0.45)
+        this.blip(now, 150, 48, 0.2, "sine", 0.5)
+        this.blip(now, 880, 240, 0.05, "square", 0.12)
         break
       case "bounce":
         this.blip(now, 240, 880, 0.22, "sine", 0.32)
@@ -150,6 +175,18 @@ export class AudioKit {
     this.context = null
     this.master = null
     this.musicGain = null
+    this.activeVoices = 0
+  }
+
+  /** Voice budget: once the bus is saturated, extra cue voices drop silently. */
+  private acquireVoice(): boolean {
+    if (this.activeVoices >= MAX_VOICES) return false
+    this.activeVoices += 1
+    return true
+  }
+
+  private releaseVoice(): void {
+    this.activeVoices = Math.max(0, this.activeVoices - 1)
   }
 
   private blip(
@@ -163,8 +200,10 @@ export class AudioKit {
     const context = this.context
     const master = this.master
     if (context === null || master === null) return
+    if (!this.acquireVoice()) return
     const osc = context.createOscillator()
     const gain = context.createGain()
+    osc.onended = () => this.releaseVoice()
     osc.type = type
     osc.frequency.setValueAtTime(from, at)
     osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), at + duration)
@@ -200,6 +239,7 @@ export class AudioKit {
     const context = this.context
     const master = this.master
     if (context === null || master === null) return
+    if (!this.acquireVoice()) return
     const frames = Math.floor(context.sampleRate * duration)
     const buffer = context.createBuffer(1, frames, context.sampleRate)
     const data = buffer.getChannelData(0)
@@ -207,6 +247,7 @@ export class AudioKit {
       data[index] = (Math.random() * 2 - 1) * (1 - index / frames)
     }
     const source = context.createBufferSource()
+    source.onended = () => this.releaseVoice()
     source.buffer = buffer
     const filter = context.createBiquadFilter()
     filter.type = "lowpass"

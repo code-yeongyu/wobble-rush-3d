@@ -36,7 +36,10 @@ export class CameraRig {
   }
 
   addShake(amount: number): void {
-    this.shake = Math.min(1, this.shake + amount)
+    // A burst of stacked hits must not pile into nausea: only a shake stronger
+    // than what is already playing raises the envelope, so N identical calls
+    // inside one impact read as ONE shake.
+    this.shake = Math.min(1, Math.max(this.shake, amount))
   }
 
   update(
@@ -57,11 +60,13 @@ export class CameraRig {
     this.position.lerp(this.desired, damp(CAMERA.positionHalfLife, dt))
     this.target.lerp(this.desiredTarget, damp(CAMERA.targetHalfLife, dt))
 
-    if (this.shake > 0.001) {
+    if (this.shake > 0.01) {
       const magnitude = this.shake * (reducedMotion ? 0.25 : 0.5)
       this.position.x += (Math.random() - 0.5) * magnitude
       this.position.y += (Math.random() - 0.5) * magnitude
-      this.shake *= 2 ** (-dt / 0.12)
+      // Half-life ~85 ms: a full 0.6 hit settles under the cutoff in ~0.5 s,
+      // inside the 600 ms motion ceiling. Reduced motion still halves it.
+      this.shake *= 2 ** (-dt / 0.085)
     } else {
       this.shake = 0
     }
