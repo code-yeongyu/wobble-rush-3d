@@ -16,11 +16,18 @@ import type { BudgetVerdict } from "./budget"
 
 /**
 /**
- * A race lasts 1-2 minutes; three covers any legitimate finish. The bound on
- * free-tier overshoot while a race rides out this grace is documented in the
- * PR: breaker staleness is at most ~2 min (60 s KV edge cache + 60 s isolate
- * cache), and Cloudflare's own daily caps remain the hard backstop behind
- * this guard.
+ * A race lasts 1-2 minutes; three covers any legitimate finish.
+ *
+ * Honest worst-case bound, free tier: a meter can cross its threshold up to
+ * ~15 min before the next cron sample, breaker reads add up to ~2 min of
+ * staleness (60 s KV edge cache + 60 s isolate cache), and a racing room then
+ * rides this 3-min grace - ~20 min end to end. One full 8-player room
+ * persists positions at ~120 rows/s, i.e. ~144k rows over that window, which
+ * EXCEEDS the free plan's 100k rows-written/day cap on its own. This guard
+ * therefore cannot guarantee pre-emption under sustained peak multiplayer on
+ * the free tier; Cloudflare's own enforcement (writes fail at the cap) is the
+ * guaranteed backstop, and the structural fix - not persisting 15 Hz position
+ * frames at all - is an explicitly out-of-scope follow-up.
  */
 export const PAUSE_RACE_GRACE_MS = 3 * 60_000
 
