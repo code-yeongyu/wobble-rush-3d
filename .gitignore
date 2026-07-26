@@ -11,3 +11,6 @@ evidence/
 !.env.example
 test-results/
 playwright-report/
+# wrangler local secrets - never commit token material
+.dev.vars
+.dev.vars.*
