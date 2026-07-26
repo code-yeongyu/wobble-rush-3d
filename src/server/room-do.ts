@@ -25,6 +25,7 @@ export type Env = {
   readonly CF_ACCOUNT_ID: string
   readonly BILLING_ANCHOR_DAY: string
   readonly BUDGET_TRIP_RATIO: string
+  readonly BUDGET_PLAN_TIER: string
 }
 
 const STORAGE_KEY = "room"

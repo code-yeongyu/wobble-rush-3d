@@ -14,7 +14,8 @@
   "vars": {
     "CF_ACCOUNT_ID": "c3552546c02ce87ca7c9416aeb53463e",
     "BILLING_ANCHOR_DAY": "1",
-    "BUDGET_TRIP_RATIO": "0.95"
+    "BUDGET_TRIP_RATIO": "0.95",
+    "BUDGET_PLAN_TIER": "free"
   },
   "durable_objects": {
     "bindings": [{ "name": "ROOMS", "class_name": "RoomDurableObject" }]

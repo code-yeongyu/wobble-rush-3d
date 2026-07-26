@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import app, { type DurableObjectIdLike, type GateEnv } from "../src/server/app"
 import { type BudgetKv, parseVerdict, VERDICT_KEY } from "../src/server/breaker"
 import type { BudgetVerdict } from "../src/server/budget"
-import { billingPeriodStart } from "../src/server/budget"
+import { billingPeriodStart, usageWindowStart } from "../src/server/budget"
 import { type CronEnv, runBudgetCron } from "../src/server/budget-cron"
 
 /**
@@ -235,6 +235,7 @@ function makeCronEnv(kv: BudgetKv): CronEnv {
     CF_ACCOUNT_ID: "acct-test",
     BILLING_ANCHOR_DAY: "1",
     BUDGET_TRIP_RATIO: "0.95",
+    BUDGET_PLAN_TIER: "paid",
   }
 }
 
@@ -253,6 +254,21 @@ describe("runBudgetCron", () => {
     const body = JSON.parse(String(call.init?.body)) as { variables: { a: string; s: string } }
     expect(body.variables.a).toBe("acct-test")
     expect(body.variables.s).toBe(new Date(billingPeriodStart(nowMs, 1)).toISOString())
+  })
+
+  test("any tier value but 'paid' falls back to the free daily window", async () => {
+    const map = new Map<string, string>()
+    const { calls, fetcher } = stubFetcher(HAPPY)
+    const env = { ...makeCronEnv(kvFromMap(map)), BUDGET_PLAN_TIER: "monthly" }
+
+    await runBudgetCron(env, fetcher)
+
+    const verdict = parseVerdict(map.get(VERDICT_KEY) ?? null)
+    expect(verdict?.tripped).toBe(false)
+    const call = calls.at(0)
+    if (!call) throw new Error("expected one analytics call")
+    const body = JSON.parse(String(call.init?.body)) as { variables: { s: string } }
+    expect(body.variables.s).toBe(new Date(usageWindowStart(nowMs, "free", 1)).toISOString())
   })
 
   test("warns and keeps the last verdict when the analytics API answers 500", async () => {

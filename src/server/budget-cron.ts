@@ -9,7 +9,7 @@
  */
 
 import { type BudgetKv, writeBreaker } from "./breaker"
-import { billingPeriodStart, computeVerdict } from "./budget"
+import { computeVerdict, type PlanTier, usageWindowStart } from "./budget"
 import { fetchUsageTotals, UsageError } from "./usage-analytics"
 
 export type CronEnv = {
@@ -18,6 +18,7 @@ export type CronEnv = {
   readonly CF_ACCOUNT_ID: string
   readonly BILLING_ANCHOR_DAY: string
   readonly BUDGET_TRIP_RATIO: string
+  readonly BUDGET_PLAN_TIER: string
 }
 
 /** Billing anchor day of month; falls back to the 1st on junk config. */
@@ -35,15 +36,17 @@ function parseTripRatio(raw: string): number {
 export async function runBudgetCron(env: CronEnv, fetcher: typeof fetch): Promise<void> {
   const anchorDay = parseAnchorDay(env.BILLING_ANCHOR_DAY)
   const ratio = parseTripRatio(env.BUDGET_TRIP_RATIO)
+  // Free is the safe default: anything but an explicit "paid" enforces the daily windows.
+  const tier: PlanTier = env.BUDGET_PLAN_TIER === "paid" ? "paid" : "free"
   const nowMs = Date.now()
-  const sinceIso = new Date(billingPeriodStart(nowMs, anchorDay)).toISOString()
+  const sinceIso = new Date(usageWindowStart(nowMs, tier, anchorDay)).toISOString()
   try {
     const totals = await fetchUsageTotals(fetcher, {
       accountId: env.CF_ACCOUNT_ID,
       token: env.CF_ANALYTICS_TOKEN,
       sinceIso,
     })
-    await writeBreaker(env.BUDGET, computeVerdict(totals, nowMs, anchorDay, ratio))
+    await writeBreaker(env.BUDGET, computeVerdict(totals, nowMs, tier, anchorDay, ratio))
   } catch (error) {
     if (error instanceof UsageError) {
       console.warn(`budget cron: ${error.message}`)

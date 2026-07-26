@@ -1,5 +1,5 @@
 /**
- * Budget domain: billing-period math and the trip verdict.
+ * Budget domain: tier-aware billing-window math and the trip verdict.
  *
  * The four Durable Object meters can trip the breaker; Workers requests are
  * advisory only - pausing multiplayer cannot reduce them, and static assets
@@ -12,14 +12,29 @@
  * https://developers.cloudflare.com/durable-objects/platform/pricing/
  * https://developers.cloudflare.com/workers/platform/pricing/
  */
-export const ALLOWANCES = {
+export const ALLOWANCES_PAID = {
   doRequests: 1_000_000,
   gbSeconds: 400_000,
   rowsWritten: 50_000_000,
   rowsRead: 25_000_000_000,
 } as const
 
-export type DoMeter = keyof typeof ALLOWANCES
+/**
+ * Daily included allowances on the Workers Free plan; exceeding one is a hard
+ * failure rather than a bill, and every window resets at 00:00 UTC.
+ * https://developers.cloudflare.com/durable-objects/platform/pricing/
+ */
+export const ALLOWANCES_FREE = {
+  doRequests: 100_000,
+  gbSeconds: 13_000,
+  rowsWritten: 100_000,
+  rowsRead: 5_000_000,
+} as const
+
+export type DoMeter = keyof typeof ALLOWANCES_PAID
+
+/** Which plan's window and allowances the guard enforces. */
+export type PlanTier = "free" | "paid"
 
 /** Month-to-date account-wide totals, as the analytics API reports them. */
 export type UsageTotals = {
@@ -40,6 +55,8 @@ export type BudgetVerdict = {
   readonly resetsAtIso: string
   readonly computedAtIso: string
 }
+
+const MS_PER_DAY = 86_400_000
 
 const DO_METERS = [
   "doRequests",
@@ -78,6 +95,12 @@ export function billingPeriodStart(nowMs: number, anchorDay: number): number {
   return Date.UTC(year, month - 1, prevAnchor)
 }
 
+/** Start of the UTC calendar day containing `nowMs` (00:00:00Z). */
+function utcDayStart(nowMs: number): number {
+  const now = new Date(nowMs)
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+}
+
 /** Start of the period after the one containing `nowMs`. */
 export function nextPeriodStart(nowMs: number, anchorDay: number): number {
   const start = new Date(billingPeriodStart(nowMs, anchorDay))
@@ -87,34 +110,43 @@ export function nextPeriodStart(nowMs: number, anchorDay: number): number {
   return Date.UTC(year, month + 1, anchor)
 }
 
-/** Trip when any DO meter reaches `ratio` x its allowance. */
+/** Tier-correct usage window start: UTC day for free, billing period for paid (anchorDay ignored for free). */
+export function usageWindowStart(nowMs: number, tier: PlanTier, anchorDay: number): number {
+  return tier === "free" ? utcDayStart(nowMs) : billingPeriodStart(nowMs, anchorDay)
+}
+
+/** Trip when any DO meter reaches `ratio` x its tier allowance. */
 export function computeVerdict(
   usage: UsageTotals,
   nowMs: number,
+  tier: PlanTier,
   anchorDay: number,
   ratio: number,
 ): BudgetVerdict {
+  const allowances = tier === "free" ? ALLOWANCES_FREE : ALLOWANCES_PAID
   let worst: { meter: DoMeter; mtd: number; limit: number } = {
     meter: "doRequests",
     mtd: 0,
-    limit: ALLOWANCES.doRequests,
+    limit: allowances.doRequests,
   }
   let worstUtilization = -1
   for (const meter of DO_METERS) {
     const mtd = mtdFor(meter, usage)
-    const limit = ALLOWANCES[meter]
+    const limit = allowances[meter]
     const utilization = mtd / limit
     if (utilization > worstUtilization) {
       worstUtilization = utilization
       worst = { meter, mtd, limit }
     }
   }
+  const resetMs =
+    tier === "free" ? utcDayStart(nowMs) + MS_PER_DAY : nextPeriodStart(nowMs, anchorDay)
   return {
     v: 1,
     tripped: worstUtilization >= ratio,
     worst,
     advisory: { workersRequests: usage.workersRequests },
-    resetsAtIso: new Date(nextPeriodStart(nowMs, anchorDay)).toISOString(),
+    resetsAtIso: new Date(resetMs).toISOString(),
     computedAtIso: new Date(nowMs).toISOString(),
   }
 }
