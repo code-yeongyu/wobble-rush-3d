@@ -42,13 +42,10 @@ console.log("PARTY PAUSE UX PASS (screenshot saved)")
 await p.click("#error-reload")
 await p.waitForSelector("#play-solo")
 await p.click("#play-solo")
-let phase = ""
-for (let i = 0; i < 40; i++) {
-  const s = await p.evaluate(() => globalThis.wobble?.state())
-  phase = s?.phase ?? ""
-  if (phase === "racing") break
-  await p.waitForTimeout(300)
-}
+await p.waitForFunction(() => globalThis.wobble?.state().phase === "racing", undefined, {
+  timeout: 15000,
+})
+const phase = await p.evaluate(() => globalThis.wobble?.state().phase ?? "")
 console.log("solo phase while tripped:", phase)
 if (phase !== "racing") throw new Error("FAIL: solo blocked")
 await p.screenshot({ path: ".omo/evidence/cost-guard/task-8-solo-while-tripped.png" })

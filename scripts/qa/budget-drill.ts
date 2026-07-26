@@ -1,6 +1,13 @@
 /** Protocol-level QA drill (run against `wrangler dev --port 8788`): while tripped, lobby sockets cannot start a race (R5) and post-race rooms drain (R4). */
 type Frame = { type: string; phase?: string; code?: string }
-type Sock = { ws: WebSocket; frames: Frame[]; closed: number | null; name: string }
+type Sock = {
+  ws: WebSocket
+  frames: Frame[]
+  closed: number | null
+  name: string
+  /** Event-driven waiters, notified from onmessage/onclose - never polled. */
+  waiters: Array<() => void>
+}
 
 const BASE = "ws://localhost:8788/ws"
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -29,28 +36,41 @@ function parseFrame(data: unknown): Frame {
 function connect(room: string, name: string): Promise<Sock> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${BASE}/${room}`)
-    const s: Sock = { ws, frames: [], closed: null, name }
+    const s: Sock = { ws, frames: [], closed: null, name, waiters: [] }
     sockets.push(s)
     ws.onopen = () => resolve(s)
     ws.onerror = () => reject(new Error(`${name}: connect failed`))
     ws.onclose = (e) => {
       s.closed = e.code
+      for (const notify of s.waiters) notify()
     }
     ws.onmessage = (e) => {
       s.frames.push(parseFrame(e.data))
+      for (const notify of s.waiters) notify()
     }
   })
 }
 const send = (s: Sock, m: unknown) => s.ws.send(JSON.stringify(m))
-async function until(cond: () => boolean, ms: number, what: string): Promise<void> {
-  const t0 = Date.now()
-  while (Date.now() - t0 < ms) {
-    if (cond()) return
-    await new Promise((r) => setTimeout(r, 250))
-  }
-  throw new Error(`timeout waiting for: ${what}`)
-}
 const has = (s: Sock, f: (fr: Frame) => boolean) => s.frames.some(f)
+
+/** Await a condition over one socket's received events: checked on every message/close, bounded by a timeout - no polling. */
+function waitOn(sock: Sock, cond: (s: Sock) => boolean, ms: number, what: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (cond(sock)) {
+      resolve()
+      return
+    }
+    const timer = setTimeout(() => reject(new Error(`timeout waiting for: ${what}`)), ms)
+    sock.waiters.push(() => {
+      if (cond(sock)) {
+        clearTimeout(timer)
+        resolve()
+      }
+    })
+  })
+}
+const settled = (socks: Sock[], cond: (s: Sock) => boolean, ms: number, what: string) =>
+  Promise.all(socks.map((s) => waitOn(s, cond, ms, `${what} (${s.name})`)))
 const pausedErr = (fr: Frame) => fr.type === "error" && fr.code === "service_paused"
 
 // Room A: lobby, joined, NOT ready
@@ -58,28 +78,20 @@ const a1 = await connect(ROOM_A, "a1")
 const a2 = await connect(ROOM_A, "a2")
 send(a1, { type: "join", name: "LobbyOne", mode: "party", colorIndex: 0 })
 send(a2, { type: "join", name: "LobbyTwo", mode: "party", colorIndex: 1 })
-await until(
-  () => has(a1, (f) => f.type === "welcome") && has(a2, (f) => f.type === "welcome"),
-  5000,
-  "A welcomes",
-)
+await settled([a1, a2], (s) => has(s, (f) => f.type === "welcome"), 5000, "welcome")
 
 // Room B: full race to finished (arms the alarm)
 const b1 = await connect(ROOM_B, "b1")
 const b2 = await connect(ROOM_B, "b2")
 send(b1, { type: "join", name: "RacerOne", mode: "party", colorIndex: 2 })
 send(b2, { type: "join", name: "RacerTwo", mode: "party", colorIndex: 3 })
-await until(
-  () => has(b1, (f) => f.type === "welcome") && has(b2, (f) => f.type === "welcome"),
-  5000,
-  "B welcomes",
-)
+await settled([b1, b2], (s) => has(s, (f) => f.type === "welcome"), 5000, "welcome")
 send(b1, { type: "ready", ready: true })
 send(b2, { type: "ready", ready: true })
-await until(() => has(b1, (f) => f.phase === "racing"), 8000, "B racing")
+await waitOn(b1, (s) => has(s, (f) => f.phase === "racing"), 8000, "B racing")
 send(b1, { type: "finish", timeMs: 21000 })
 send(b2, { type: "finish", timeMs: 22000 })
-await until(() => has(b1, (f) => f.type === "results"), 5000, "B results")
+await waitOn(b1, (s) => has(s, (f) => f.type === "results"), 5000, "B results")
 console.log("SETUP OK: A lobby joined (unready), B raced to finished")
 
 // TRIP via external kv put (interop proven earlier)
@@ -99,20 +111,17 @@ if (put.exitCode !== 0) throw new Error(`kv put failed: ${put.stderr.toString()}
 console.log("TRIPPED at", new Date().toISOString())
 
 // R4: B drains once the DO-side breaker cache (60s) expires and the next alarm tick runs
-await until(
-  () => has(b1, pausedErr) && has(b2, pausedErr) && b1.closed !== null && b2.closed !== null,
-  80000,
-  "B drain frames + closes",
-)
+await settled([b1, b2], (s) => has(s, pausedErr) && s.closed !== null, 80000, "drain frame + close")
 console.log("R4 DRAIN PASS: both B sockets got service_paused and closed", b1.closed, b2.closed)
 
 // R5: A tries to start a race — must be rejected, no countdown ever
 send(a1, { type: "ready", ready: true })
 send(a2, { type: "ready", ready: true })
-await until(
-  () => has(a1, pausedErr) && has(a2, pausedErr) && a1.closed !== null && a2.closed !== null,
+await settled(
+  [a1, a2],
+  (s) => has(s, pausedErr) && s.closed !== null,
   8000,
-  "A service_paused rejections + closes",
+  "service_paused rejection + close",
 )
 // Both sockets are closed, so nothing more can arrive: the frames collected up
 // to the close events are the complete record - no timing luck involved.
