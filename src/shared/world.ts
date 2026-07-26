@@ -4,6 +4,11 @@
  * `createWorldSnapshot` freezes every dynamic collider at `timeSec` and
  * exposes sphere queries against the whole course. Deterministic: the same
  * (course, timeSec, inputs) always produce the same ContactResult.
+ *
+ * `resolve` reports: it depenetrates, detects ground and slides along walls,
+ * and returns one ContactImpulse per distinct obstacle touched. It never
+ * decides how the runner reacts to a sweeper or bumper — that is the
+ * consumer's job, so one physical collision can produce one response.
  */
 
 import { sphereVsBox, sphereVsSphere } from "./collision"
@@ -12,10 +17,10 @@ import type {
   BoxCollider,
   BumperSpec,
   Checkpoint,
+  ContactImpulse,
   ContactResult,
   CourseDefinition,
   MoverSpec,
-  SimEvent,
   SphereCollider,
   SweeperSpec,
   Vec3,
@@ -95,47 +100,39 @@ export function createWorldSnapshot(course: CourseDefinition, timeSec: number): 
     let vz = velocity.z
     let grounded = false
     let carry: Vec3 = ZERO_VEC3
-    const events: SimEvent[] = []
+    // One wall-slide projection per collider per tick, in first-contact order.
+    // Depenetration can touch the same collider on several iterations; applying
+    // the projection every time bleeds the tangential component (a 45-degree
+    // wedge halves the slide per pass), so the velocity response runs once per
+    // surface after the position loop.
+    const wallNormals = new Map<string, Vec3>()
+    // One impulse per distinct obstacle, however many iterations touch it.
+    const impulses = new Map<string, ContactImpulse>()
 
-    // Platforms and movers push the sphere out along the contact normal.
-    for (let iteration = 0; iteration < MAX_RESOLVE_ITERATIONS; iteration++) {
-      let anyHit = false
-
-      const depenetrate = (box: BoxCollider, moverSpec: MoverSpec | null): void => {
-        const hit = sphereVsBox(vec3(px, py, pz), radius, box)
-        if (!hit.hit) return
-        anyHit = true
-        px += hit.normal.x * hit.depth
-        py += hit.normal.y * hit.depth
-        pz += hit.normal.z * hit.depth
-        if (hit.normal.y >= GROUND_NORMAL_Y) {
-          grounded = true
-          if (vy < 0) vy = 0
-          if (moverSpec !== null) carry = moverVelocityAt(moverSpec, timeSec)
-        } else {
-          // Slide along walls: remove only the velocity component into the surface.
-          const into = vx * hit.normal.x + vy * hit.normal.y + vz * hit.normal.z
-          if (into < 0) {
-            vx -= hit.normal.x * into
-            vy -= hit.normal.y * into
-            vz -= hit.normal.z * into
-          }
-        }
-      }
-
-      for (const box of platformBoxes) depenetrate(box, null)
-      for (const entry of movers) depenetrate(entry.box, entry.spec)
-
-      if (!anyHit) break
-    }
-
-    // Sweeper arms knock the runner away tangentially.
-    for (const entry of sweepers) {
-      const hit = sphereVsBox(vec3(px, py, pz), radius, entry.arm)
-      if (!hit.hit) continue
+    const depenetrateSolid = (key: string, box: BoxCollider, moverSpec: MoverSpec | null): void => {
+      const hit = sphereVsBox(vec3(px, py, pz), radius, box)
+      if (!hit.hit) return
+      anyHit = true
       px += hit.normal.x * hit.depth
       py += hit.normal.y * hit.depth
       pz += hit.normal.z * hit.depth
+      if (hit.normal.y >= GROUND_NORMAL_Y) {
+        grounded = true
+        if (moverSpec !== null) carry = moverVelocityAt(moverSpec, timeSec)
+      } else if (!wallNormals.has(key)) {
+        wallNormals.set(key, hit.normal)
+      }
+    }
+
+    // Sweeper arms depenetrate and report a tangential push direction.
+    const depenetrateSweeper = (entry: SweeperEntry): void => {
+      const hit = sphereVsBox(vec3(px, py, pz), radius, entry.arm)
+      if (!hit.hit) return
+      anyHit = true
+      px += hit.normal.x * hit.depth
+      py += hit.normal.y * hit.depth
+      pz += hit.normal.z * hit.depth
+      if (impulses.has(entry.spec.id)) return
       // Tangential direction: omega x r, with omega along +/-Y.
       const spin = entry.spec.angularVelocityDeg >= 0 ? 1 : -1
       const rx = px - entry.spec.pivot.x
@@ -157,19 +154,26 @@ export function createWorldSnapshot(course: CourseDefinition, timeSec: number): 
           tz = 0
         }
       }
-      vx = tx * entry.spec.knockbackSpeed
-      vz = tz * entry.spec.knockbackSpeed
-      vy = entry.spec.knockbackLift
-      events.push({ kind: "hit", position: vec3(px, py, pz), obstacle: entry.spec.id })
+      impulses.set(entry.spec.id, {
+        kind: "sweeper",
+        obstacle: entry.spec.id,
+        direction: vec3(tx, 0, tz),
+        speed: entry.spec.knockbackSpeed,
+        lift: entry.spec.knockbackLift,
+        point: hit.point,
+        depth: hit.depth,
+      })
     }
 
-    // Bumpers reflect the runner radially outward.
-    for (const entry of bumpers) {
+    // Bumpers depenetrate and report a radially outward push direction.
+    const depenetrateBumper = (entry: BumperEntry): void => {
       const hit = sphereVsSphere(vec3(px, py, pz), radius, entry.sphere.center, entry.sphere.radius)
-      if (!hit.hit) continue
+      if (!hit.hit) return
+      anyHit = true
       px += hit.normal.x * hit.depth
       py += hit.normal.y * hit.depth
       pz += hit.normal.z * hit.depth
+      if (impulses.has(entry.spec.id)) return
       let ox = hit.normal.x
       let oz = hit.normal.z
       const outwardLen = Math.hypot(ox, oz)
@@ -181,18 +185,48 @@ export function createWorldSnapshot(course: CourseDefinition, timeSec: number): 
         ox = 1
         oz = 0
       }
-      vx = ox * entry.spec.impulseSpeed
-      vz = oz * entry.spec.impulseSpeed
-      vy = entry.spec.impulseLift
-      events.push({ kind: "bounce", position: vec3(px, py, pz), obstacle: entry.spec.id })
+      impulses.set(entry.spec.id, {
+        kind: "bumper",
+        obstacle: entry.spec.id,
+        direction: vec3(ox, 0, oz),
+        speed: entry.spec.impulseSpeed,
+        lift: entry.spec.impulseLift,
+        point: hit.point,
+        depth: hit.depth,
+      })
     }
+
+    // Every solid pushes the sphere out along the contact normal; corner
+    // contacts settle over a few passes.
+    let anyHit = false
+    for (let iteration = 0; iteration < MAX_RESOLVE_ITERATIONS; iteration++) {
+      anyHit = false
+      for (const [index, box] of platformBoxes.entries()) depenetrateSolid(`p:${index}`, box, null)
+      for (const [index, entry] of movers.entries())
+        depenetrateSolid(`m:${index}`, entry.box, entry.spec)
+      for (const entry of sweepers) depenetrateSweeper(entry)
+      for (const entry of bumpers) depenetrateBumper(entry)
+      if (!anyHit) break
+    }
+
+    // Slide along walls: remove only the velocity component into the surface,
+    // once per surface touched this tick.
+    for (const normal of wallNormals.values()) {
+      const into = vx * normal.x + vy * normal.y + vz * normal.z
+      if (into < 0) {
+        vx -= normal.x * into
+        vy -= normal.y * into
+        vz -= normal.z * into
+      }
+    }
+    if (grounded && vy < 0) vy = 0
 
     return {
       position: vec3(px, py, pz),
       velocity: vec3(vx, vy, vz),
       grounded,
       carry,
-      events,
+      impulses: [...impulses.values()],
     }
   }
 

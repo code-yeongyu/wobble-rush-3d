@@ -228,6 +228,13 @@ export type RunnerSim = {
   checkpoint: CheckpointIndex
   /** Ground platform velocity applied this tick (moving-platform carry). */
   carry: MutVec3
+  /**
+   * Obstacle whose impulse most recently fired, with the remaining lockout in
+   * seconds. One physical collision must produce one impulse and one event,
+   * however many ticks the overlap lasts.
+   */
+  lastContactId: string | null
+  contactLockout: number
 }
 
 /** Side effects produced by one simulation tick, consumed by FX/audio/HUD. */
@@ -235,8 +242,19 @@ export type SimEvent =
   | { readonly kind: "jump"; readonly position: Vec3 }
   | { readonly kind: "land"; readonly position: Vec3; readonly impactSpeed: number }
   | { readonly kind: "dive"; readonly position: Vec3 }
-  | { readonly kind: "hit"; readonly position: Vec3; readonly obstacle: ObstacleId }
-  | { readonly kind: "bounce"; readonly position: Vec3; readonly obstacle: ObstacleId }
+  | {
+      readonly kind: "hit"
+      readonly position: Vec3
+      readonly obstacle: ObstacleId
+      /** Speed the obstacle imparted, m/s — lets a graze read softer than a slam. */
+      readonly impactSpeed: number
+    }
+  | {
+      readonly kind: "bounce"
+      readonly position: Vec3
+      readonly obstacle: ObstacleId
+      readonly impactSpeed: number
+    }
   | { readonly kind: "checkpoint"; readonly position: Vec3; readonly index: CheckpointIndex }
   | { readonly kind: "respawn"; readonly position: Vec3 }
   | { readonly kind: "finish"; readonly position: Vec3 }
@@ -246,6 +264,34 @@ export type SimEvent =
  * course/obstacle collision (lane B).
  * ------------------------------------------------------------------ */
 
+export const CONTACT_KINDS = ["sweeper", "bumper"] as const
+export type ContactKind = (typeof CONTACT_KINDS)[number]
+
+/**
+ * One obstacle contact detected during a tick.
+ *
+ * The world reports what the geometry did; it does NOT decide how the runner
+ * reacts. Previously the resolver overwrote velocity and emitted an event on
+ * every overlapping frame, so a single sweeper pass fired up to six hits — six
+ * sounds, six particle bursts, six camera shakes — and pinned the runner to the
+ * arm for over a second. Separating detection from response lets the runner
+ * apply one impulse per collision and keep its own momentum.
+ */
+export type ContactImpulse = {
+  readonly kind: ContactKind
+  readonly obstacle: ObstacleId
+  /** Unit horizontal direction to push the runner. */
+  readonly direction: Vec3
+  /** Horizontal speed the obstacle imparts, m/s. */
+  readonly speed: number
+  /** Vertical speed the obstacle imparts, m/s. */
+  readonly lift: number
+  /** Where the contact happened, for effects. */
+  readonly point: Vec3
+  /** Penetration depth this tick — a graze is shallow, a slam is deep. */
+  readonly depth: number
+}
+
 export type ContactResult = {
   /** Corrected position after depenetration. */
   readonly position: Vec3
@@ -254,8 +300,8 @@ export type ContactResult = {
   readonly grounded: boolean
   /** Velocity of the surface the runner stands on (moving platform carry). */
   readonly carry: Vec3
-  /** Impulses from bumpers/sweepers applied this tick, already in velocity. */
-  readonly events: readonly SimEvent[]
+  /** Obstacle contacts detected this tick. The runner decides how to apply them. */
+  readonly impulses: readonly ContactImpulse[]
 }
 
 /**

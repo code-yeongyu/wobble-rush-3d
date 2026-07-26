@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { moverBoxAt, moverVelocityAt } from "../src/shared/obstacles"
+import type { ContactImpulse } from "../src/shared/types"
 import { vec3 } from "../src/shared/types"
 import { createWorldSnapshot } from "../src/shared/world"
 import { bumper, course, expectClose, mover, RADIUS, sweeper } from "./support/world-fixtures"
+
+const oneImpulse = (impulses: readonly ContactImpulse[]): ContactImpulse => {
+  expect(impulses).toHaveLength(1)
+  const impulse = impulses[0]
+  if (impulse === undefined) throw new Error("expected exactly one impulse")
+  return impulse
+}
 
 describe("world.resolve — platforms", () => {
   test("a sphere falling onto a platform lands on top, grounded, downward velocity zeroed", () => {
@@ -12,7 +20,7 @@ describe("world.resolve — platforms", () => {
     // platform top is y=0.25, so the sphere rests at 0.25 + radius
     expectClose(result.position.y, 0.75)
     expect(result.velocity.y).toBe(0)
-    expect(result.events).toHaveLength(0)
+    expect(result.impulses).toHaveLength(0)
   })
 
   test("a sphere resting exactly on the surface stays grounded-adjacent (no penetration, no snap)", () => {
@@ -31,7 +39,7 @@ describe("world.resolve — platforms", () => {
     // into-wall velocity removed, tangential preserved
     expectClose(result.velocity.x, 0)
     expectClose(result.velocity.z, 3)
-    expect(result.events).toHaveLength(0)
+    expect(result.impulses).toHaveLength(0)
   })
 
   test("a sphere moving freely through open air is untouched", () => {
@@ -44,7 +52,7 @@ describe("world.resolve — platforms", () => {
     expectClose(result.velocity.x, 2)
     expectClose(result.velocity.y, -1)
     expectClose(result.velocity.z, 3)
-    expect(result.events).toHaveLength(0)
+    expect(result.impulses).toHaveLength(0)
   })
 })
 
@@ -67,6 +75,7 @@ describe("world.resolve — movers", () => {
     expectClose(result.carry.x, expectedCarry.x, 1e-9)
     expectClose(result.carry.y, expectedCarry.y, 1e-9)
     expectClose(result.carry.z, expectedCarry.z, 1e-9)
+    expect(result.impulses).toHaveLength(0)
   })
 
   test("standing on a static platform reports zero carry", () => {
@@ -97,38 +106,55 @@ describe("world.resolve — movers", () => {
 })
 
 describe("world.resolve — sweepers", () => {
-  test("touching the arm emits a hit event and imparts knockback speed/lift", () => {
+  test("touching the arm reports one sweeper impulse and leaves the velocity response to the consumer", () => {
     // t=0: arm extends along +X from the pivot, arm box z in [19.75, 20.25]
     const world = createWorldSnapshot(course, 0)
     const result = world.resolve(vec3(2, 0.75, 20), vec3(2, 0.75, 20.4), vec3(0, 0, 2), RADIUS)
-    expect(result.events).toHaveLength(1)
-    expect(result.events[0]).toMatchObject({ kind: "hit", obstacle: sweeper.id })
-    expectClose(result.velocity.y, sweeper.knockbackLift)
-    const horizontal = Math.hypot(result.velocity.x, result.velocity.z)
-    expectClose(horizontal, sweeper.knockbackSpeed, 1e-9)
-    // positive angular velocity sweeps the +X arm towards -Z: knockback has -Z component
-    expect(result.velocity.z).toBeLessThan(0)
+    const impulse = oneImpulse(result.impulses)
+    expect(impulse.kind).toBe("sweeper")
+    expect(impulse.obstacle).toBe(sweeper.id)
+    expectClose(impulse.speed, sweeper.knockbackSpeed)
+    expectClose(impulse.lift, sweeper.knockbackLift)
+    // unit, horizontal, tangential: positive spin sweeps the +X arm towards -Z
+    expectClose(Math.hypot(impulse.direction.x, impulse.direction.z), 1)
+    expect(impulse.direction.y).toBe(0)
+    expect(impulse.direction.z).toBeLessThan(0)
+    // contact point sits on the arm surface; depth is this tick's overlap
+    expectClose(impulse.point.x, 2)
+    expectClose(impulse.point.z, 20.25)
+    expectClose(impulse.depth, 0.35)
+    // geometry still depenetrates the runner out of the arm...
+    expectClose(result.position.z, 20.75)
+    // ...but the world no longer overwrites velocity with the knockback
+    expect(result.velocity).toEqual(vec3(0, 0, 2))
   })
 
-  test("standing clear of the arm produces no hit event", () => {
+  test("standing clear of the arm produces no impulse", () => {
     const world = createWorldSnapshot(course, 0)
     const result = world.resolve(vec3(0, 1, 0), vec3(0, 0.7, 0), vec3(0, -1, 0), RADIUS)
-    expect(result.events).toHaveLength(0)
+    expect(result.impulses).toHaveLength(0)
   })
 })
 
 describe("world.resolve — bumpers", () => {
-  test("touching a bumper emits a bounce event and imparts outward impulse + lift", () => {
+  test("touching a bumper reports one bumper impulse pointing radially outward", () => {
     const world = createWorldSnapshot(course, 0)
     const result = world.resolve(vec3(0.9, 0.5, 40), vec3(1.3, 0.5, 40), vec3(3, 0, 0), RADIUS)
-    expect(result.events).toHaveLength(1)
-    expect(result.events[0]).toMatchObject({ kind: "bounce", obstacle: bumper.id })
-    expectClose(result.velocity.y, bumper.impulseLift)
-    const horizontal = Math.hypot(result.velocity.x, result.velocity.z)
-    expectClose(horizontal, bumper.impulseSpeed, 1e-9)
+    const impulse = oneImpulse(result.impulses)
+    expect(impulse.kind).toBe("bumper")
+    expect(impulse.obstacle).toBe(bumper.id)
+    expectClose(impulse.speed, bumper.impulseSpeed)
+    expectClose(impulse.lift, bumper.impulseLift)
     // the runner is on the +X side of the bumper, so the impulse points +X
-    expect(result.velocity.x).toBeGreaterThan(0)
-    expectClose(result.velocity.z, 0, 1e-9)
+    expectClose(impulse.direction.x, 1)
+    expectClose(impulse.direction.z, 0)
+    expect(impulse.direction.y).toBe(0)
+    // contact point on the dome surface, depth is the overlap
+    expectClose(impulse.point.x, 0.9)
+    expectClose(impulse.depth, 0.2)
+    // depenetrated off the dome, velocity untouched by the world
+    expectClose(result.position.x, 1.5)
+    expect(result.velocity).toEqual(vec3(3, 0, 0))
   })
 })
 
