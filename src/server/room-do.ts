@@ -14,16 +14,26 @@ import type { RoomAction, RoomEffect, RoomState } from "../shared/room"
 import { createRoom, reduceRoom } from "../shared/room"
 import type { PlayerId } from "../shared/types"
 import { asPlayerId, asRoomCode, assertNever } from "../shared/types"
+import { isPaused, makeBreakerReader, PAUSED_MESSAGE } from "./breaker"
+import { blockedWhilePaused, drainOnPause, gateRoomFetch } from "./drain-policy"
 
 export type Env = {
   readonly ROOMS: DurableObjectNamespace
   readonly ASSETS: Fetcher
+  readonly BUDGET: KVNamespace
+  readonly CF_ANALYTICS_TOKEN: string
+  readonly CF_ACCOUNT_ID: string
+  readonly BILLING_ANCHOR_DAY: string
+  readonly BUDGET_TRIP_RATIO: string
 }
 
 const STORAGE_KEY = "room"
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z]{4}$/
 /** Practical floor for alarm re-arms: DO alarms have second granularity. */
 const ALARM_INTERVAL_MS = 1000
+
+/** Cached breaker reader shared by every pause gate in this isolate. */
+const readBreaker = makeBreakerReader()
 
 /** Per-connection state persisted across hibernation on the socket itself. */
 type Attachment = { readonly playerId: string }
@@ -79,6 +89,8 @@ function toAction(message: ClientMessage, id: PlayerId): RoomAction {
 }
 
 export class RoomDurableObject extends DurableObject<Env> {
+  private pausedSinceMs: number | null = null
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     // Answer keepalives without waking the isolate out of hibernation.
@@ -108,6 +120,10 @@ export class RoomDurableObject extends DurableObject<Env> {
     const upgrade = request.headers.get("Upgrade")
     if (upgrade === null || upgrade.toLowerCase() !== "websocket") {
       return jsonError(426, "upgrade_required", "Expected a WebSocket upgrade request")
+    }
+
+    if (gateRoomFetch(await readBreaker(this.env.BUDGET, Date.now()), Date.now())) {
+      return jsonError(503, "service_paused", PAUSED_MESSAGE)
     }
 
     let room = await this.loadRoom()
@@ -161,6 +177,17 @@ export class RoomDurableObject extends DurableObject<Env> {
       throw e
     }
 
+    if (
+      blockedWhilePaused(decoded.type) &&
+      gateRoomFetch(await readBreaker(this.env.BUDGET, Date.now()), Date.now())
+    ) {
+      ws.send(
+        encodeServerMessage({ type: "error", code: "service_paused", message: PAUSED_MESSAGE }),
+      )
+      ws.close(1001, "service paused")
+      return
+    }
+
     const { state, effects } = reduceRoom(room, toAction(decoded, playerId), Date.now())
     await this.saveRoom(state)
     await this.applyEffects(effects)
@@ -186,6 +213,24 @@ export class RoomDurableObject extends DurableObject<Env> {
     const room = await this.loadRoom()
     if (room === null) return
     const now = Date.now()
+    if (isPaused(await readBreaker(this.env.BUDGET, now), now)) {
+      this.pausedSinceMs ??= now
+      if (drainOnPause(room.phase, now - this.pausedSinceMs)) {
+        const frame = encodeServerMessage({
+          type: "error",
+          code: "service_paused",
+          message: PAUSED_MESSAGE,
+        })
+        for (const socket of this.ctx.getWebSockets()) {
+          socket.send(frame)
+          socket.close(1001, "service paused")
+        }
+        // No re-arm: the drained room goes idle.
+        return
+      }
+    } else {
+      this.pausedSinceMs = null
+    }
     const { state, effects } = reduceRoom(room, { kind: "tick" }, now)
     await this.saveRoom(state)
     await this.applyEffects(effects)
