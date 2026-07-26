@@ -34,11 +34,16 @@ const HAPPY = {
       accounts: [
         {
           durableObjectsPeriodicGroups: [
-            { sum: { activeTime: 70_565_942, rowsRead: 2532, rowsWritten: 2408 } },
+            {
+              sum: {
+                activeTime: 70_565_942,
+                rowsRead: 2532,
+                rowsWritten: 2408,
+                inboundWebsocketMsgCount: 1429,
+              },
+            },
           ],
-          durableObjectsInvocationsAdaptiveGroups: [
-            { sum: { requests: 2872, inboundWebsocketMsgCount: 1429 } },
-          ],
+          durableObjectsInvocationsAdaptiveGroups: [{ sum: { requests: 2872 } }],
           workersInvocationsAdaptive: [{ sum: { requests: 1_519_924 } }],
         },
       ],
@@ -53,10 +58,10 @@ function invocationFixture(requests: number, inboundWebsocketMsgCount: number): 
       viewer: {
         accounts: [
           {
-            durableObjectsPeriodicGroups: [],
-            durableObjectsInvocationsAdaptiveGroups: [
-              { sum: { requests, inboundWebsocketMsgCount } },
+            durableObjectsPeriodicGroups: [
+              { sum: { activeTime: 0, rowsRead: 0, rowsWritten: 0, inboundWebsocketMsgCount } },
             ],
+            durableObjectsInvocationsAdaptiveGroups: [{ sum: { requests } }],
             workersInvocationsAdaptive: [],
           },
         ],
@@ -218,7 +223,12 @@ describe("fetchUsageTotals", () => {
     const body = requestBodySchema.parse(JSON.parse(String(call.init?.body)))
     expect(body.query).toContain("durableObjectsPeriodicGroups")
     expect(body.query).toContain("durableObjectsInvocationsAdaptiveGroups")
-    expect(body.query).toContain("inboundWebsocketMsgCount")
+    expect(body.query).toMatch(
+      /durableObjectsPeriodicGroups\(limit:2[^)]*\)\{sum\{[^}]*inboundWebsocketMsgCount/,
+    )
+    expect(body.query).not.toMatch(
+      /durableObjectsInvocationsAdaptiveGroups\(limit:2[^)]*\)\{sum\{[^}]*inboundWebsocketMsgCount/,
+    )
     expect(body.query).toContain("workersInvocationsAdaptive")
     expect(body.variables).toEqual({ a: ACCOUNT_ID, s: SINCE })
   })

@@ -16,8 +16,8 @@ const ANALYTICS_URL = "https://api.cloudflare.com/client/v4/graphql"
 
 /** One document, three datasets; variables keep account and window out of the query text. */
 const USAGE_QUERY = `query($a:String!,$s:Time!){viewer{accounts(filter:{accountTag:$a}){
- durableObjectsPeriodicGroups(limit:2, filter:{datetime_geq:$s}){sum{activeTime rowsWritten rowsRead}}
- durableObjectsInvocationsAdaptiveGroups(limit:2, filter:{datetime_geq:$s}){sum{requests inboundWebsocketMsgCount}}
+ durableObjectsPeriodicGroups(limit:2, filter:{datetime_geq:$s}){sum{activeTime rowsWritten rowsRead inboundWebsocketMsgCount}}
+ durableObjectsInvocationsAdaptiveGroups(limit:2, filter:{datetime_geq:$s}){sum{requests}}
  workersInvocationsAdaptive(limit:2, filter:{datetime_geq:$s}){sum{requests}}
 }}}`
 
@@ -42,11 +42,12 @@ const periodicGroupSchema = z.object({
     activeTime: z.number(),
     rowsWritten: z.number(),
     rowsRead: z.number(),
+    inboundWebsocketMsgCount: z.number(),
   }),
 })
 
 const doInvocationGroupSchema = z.object({
-  sum: z.object({ requests: z.number(), inboundWebsocketMsgCount: z.number() }),
+  sum: z.object({ requests: z.number() }),
 })
 
 const invocationGroupSchema = z.object({
@@ -139,7 +140,7 @@ export async function fetchUsageTotals(
   const workers = singleNode(account.workersInvocationsAdaptive, "workersInvocationsAdaptive")
 
   const rawRequests = doInvocations?.sum.requests ?? 0
-  const inboundWs = doInvocations?.sum.inboundWebsocketMsgCount ?? 0
+  const inboundWs = periodic?.sum.inboundWebsocketMsgCount ?? 0
   // Cloudflare bills incoming WebSocket messages to a DO at 20 messages per
   // billed request, while every other invocation bills 1:1
   // (https://developers.cloudflare.com/durable-objects/platform/pricing/).
